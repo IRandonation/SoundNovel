@@ -1,0 +1,28 @@
+# API配置
+api:
+  url: "https://api.deepseek.com/v1/chat/completions"
+  key: "sk-359f791b8f954d9491c88bf3d55aee9d"  # 替换为实际API密钥
+  model: "deepseek-chat"
+
+# 生成控制
+generation:
+  world:
+    temperature: 0.7
+    max_tokens: 2000
+  plot:
+    temperature: 0.6
+    max_tokens: 2000
+  chapter:
+    temperature: 0.7
+    max_tokens: 3000
+  validate:
+    temperature: 0.3
+    max_tokens: 2000
+
+# 小说设置
+novel:
+  chapter_count: 5      # 章节数量
+  min_words_per_chapter: 1500
+  max_words_per_chapter: 2500
+  genres: ["奇幻", "科幻", "现代", "历史"]  # 可选类型
+  styles: ["轻松", "严肃", "黑暗", "浪漫"]  # 可选风格
