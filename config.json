@@ -1,8 +1,0 @@
-{
-  "api_key": "sk-8e78469ddb504bb7be7df26b34dd419b",
-  "chunk_settings": {
-    "size": 3000,
-    "overlap": 200 
-  },
-  "encoding_retry": ["utf-8", "gbk", "gb18030"]
-}

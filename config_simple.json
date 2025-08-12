@@ -1,0 +1,19 @@
+{
+  "api_key": "sk-638cba8896ae4a328b047062850297a0",
+  "api_url": "https://api.deepseek.com",
+  "model": "deepseek-chat",
+  "temperature": 0.8,
+  "max_tokens": 2000,
+  "chunk_size": 2000,
+  "min_chunk_size": 300,
+  "max_retries": 2,
+  "retry_delay": 1,
+  "worldview": "西方玄幻世界观",
+  "writing_style": "类似斗破苍穹那种爽文的写作技巧，调动情绪提供爽点",
+  "literary_techniques": [
+    "保持语言流畅自然，情绪饱满提供爽文感觉",
+    "运用环境和心理描写",
+    "确保对话真实可信",
+    "使用一些装逼的文字来塑造人物逼格"
+  ]
+}
