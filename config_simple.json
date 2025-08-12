@@ -1,19 +1,27 @@
 {
-  "api_key": "sk-638cba8896ae4a328b047062850297a0",
-  "api_url": "https://api.deepseek.com",
-  "model": "deepseek-chat",
+  "api_key": "92436d5684874d1587168a80a6da6e28.uIQ1fWap4xIIAi7E",
+  "api_url": "https://open.bigmodel.cn",
+  "model": "glm-4-long",
   "temperature": 0.8,
-  "max_tokens": 2000,
-  "chunk_size": 2000,
-  "min_chunk_size": 300,
-  "max_retries": 2,
-  "retry_delay": 1,
-  "worldview": "西方玄幻世界观",
-  "writing_style": "类似斗破苍穹那种爽文的写作技巧，调动情绪提供爽点",
+  "max_tokens": 16000,
+  "chunk_size": 50000,
+  "min_chunk_size": 8000,
+  "max_retries": 3,
+  "retry_delay": 2,
+  "worldview": "洪荒修仙世界观",
+  "writing_style": "传统修仙小说风格，注重修炼体系和境界描写，情节紧凑有逻辑性",
   "literary_techniques": [
-    "保持语言流畅自然，情绪饱满提供爽文感觉",
-    "运用环境和心理描写",
-    "确保对话真实可信",
-    "使用一些装逼的文字来塑造人物逼格"
-  ]
+    "保持语言流畅自然，符合修仙小说语境",
+    "注重修炼体系和境界描写",
+    "确保人物性格一致，情节逻辑连贯",
+    "适当运用环境描写营造修仙氛围",
+    "对话符合人物身份和修仙世界观"
+  ],
+  "long_text_config": {
+    "max_context_length": 1000000,
+    "overlap_size": 2000,
+    "preserve_context": true,
+    "context_window_size": 800000,
+    "max_chunk_processing": 3
+  }
 }

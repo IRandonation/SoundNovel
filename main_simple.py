@@ -32,14 +32,14 @@ class SimpleNovelRewriter:
         # 初始化API客户端
         self.client = OpenAI(
             api_key=self.config["api_key"],
-            base_url=self.config.get("api_url", "https://api.deepseek.com")
+            base_url=self.config.get("api_url", "https://open.bigmodel.cn")
         )
         
         # 初始化核心组件
         self.document_importer = SimpleDocumentImporter()
         self.text_splitter = SimpleTextSplitter(
-            max_chunk_size=self.config.get("chunk_size", 2000),
-            min_chunk_size=self.config.get("min_chunk_size", 300)
+            max_chunk_size=self.config.get("chunk_size", 50000),
+            min_chunk_size=self.config.get("min_chunk_size", 8000)
         )
         self.prompt_manager = SimplePromptManager(self.config)
         self.output_formatter = SimpleOutputFormatter()
@@ -193,22 +193,45 @@ class SimpleNovelRewriter:
             return None
     
     def _rewrite_with_api(self, messages: List[Dict], original_text: str) -> str:
-        """调用API进行文本改写"""
+        """调用API进行文本改写，优化长文本处理"""
+        # 获取长文本配置
+        long_text_config = self.config.get("long_text_config", {})
+        max_context_length = long_text_config.get("max_context_length", 32768)
+        max_chunk_processing = long_text_config.get("max_chunk_processing", 3)
+        
+        # 检查是否为超长文本块
+        text_length = len(original_text)
+        is_ultra_long = text_length > 50000
+        
         for attempt in range(self.config["max_retries"]):
             try:
+                # 根据文本长度调整API参数
+                if is_ultra_long:
+                    # 超长文本：使用更高的温度和更长的输出
+                    temperature = self.config["temperature"] * 0.8  # 降低随机性
+                    max_tokens = min(self.config["max_tokens"] * 2, 32000)  # 增加输出长度
+                    top_p = 0.95  # 增加采样范围
+                else:
+                    # 普通文本：使用标准参数
+                    temperature = self.config["temperature"]
+                    max_tokens = self.config["max_tokens"]
+                    top_p = 0.9
+                
                 response: ChatCompletion = self.client.chat.completions.create(
                     model=self.config["model"],
                     messages=messages,
-                    temperature=self.config["temperature"],
-                    max_tokens=self.config["max_tokens"],
-                    top_p=0.9,
-                    frequency_penalty=0.2
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    top_p=top_p,
+                    frequency_penalty=0.1 if is_ultra_long else 0.2,  # 超长文本降低频率惩罚
+                    stream=False
                 )
                 
                 result = response.choices[0].message.content.strip()
                 
                 # 检查字数是否过短
-                if len(result) < len(original_text) * 0.6:
+                min_length_ratio = 0.5 if is_ultra_long else 0.6
+                if len(result) < len(original_text) * min_length_ratio:
                     if attempt < self.config["max_retries"] - 1:
                         time.sleep(self.config["retry_delay"] * (attempt + 1))
                         continue

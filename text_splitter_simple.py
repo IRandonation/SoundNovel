@@ -35,7 +35,7 @@ class TextChunk:
 class SimpleTextSplitter:
     """简化版智能文本分割器"""
     
-    def __init__(self, max_chunk_size: int = 2000, min_chunk_size: int = 300):
+    def __init__(self, max_chunk_size: int = 50000, min_chunk_size: int = 8000):
         self.max_chunk_size = max_chunk_size
         self.min_chunk_size = min_chunk_size
         self.logger = logging.getLogger(__name__)
@@ -108,6 +108,158 @@ class SimpleTextSplitter:
         # 预处理文本
         text = self._preprocess_text(text)
         
+        # 检查是否为超长文本，采用不同的分割策略
+        if len(text) > self.max_chunk_size * 3:
+            return self._split_ultra_long_text(text)
+        elif len(text) > self.max_chunk_size * 2:
+            return self._split_long_text(text)
+        else:
+            return self._split_normal_text(text)
+    
+    def _split_ultra_long_text(self, text: str) -> List[TextChunk]:
+        """分割超长文本（1M+字符），采用智能上下文感知分割"""
+        # 首先按大章节分割
+        major_sections = self._split_by_major_sections(text)
+        
+        all_chunks = []
+        for section_text in major_sections:
+            if len(section_text) <= self.max_chunk_size:
+                # 如果大章节本身不大，直接作为一个块
+                chunk_type = self._detect_text_type(section_text)
+                chunk = TextChunk(
+                    text=section_text,
+                    chunk_type=chunk_type,
+                    start_pos=text.find(section_text),
+                    end_pos=text.find(section_text) + len(section_text),
+                    metadata={'major_section': True, 'ultra_long': True}
+                )
+                all_chunks.append(chunk)
+            else:
+                # 大章节仍然很大，使用智能语义分割
+                sub_chunks = self._split_semantically_with_context(section_text)
+                all_chunks.extend(sub_chunks)
+        
+        # 后处理：合并过小的块
+        all_chunks = self._merge_small_chunks(all_chunks)
+        
+        return all_chunks
+    
+    def _split_long_text(self, text: str) -> List[TextChunk]:
+        """分割长文本，保持上下文连贯性"""
+        # 首先尝试按章节分割
+        chapter_chunks = self._split_by_chapters(text)
+        
+        all_chunks = []
+        for chapter_text in chapter_chunks:
+            if len(chapter_text) <= self.max_chunk_size:
+                # 如果章节本身不大，直接作为一个块
+                chunk_type = self._detect_text_type(chapter_text)
+                chunk = TextChunk(
+                    text=chapter_text,
+                    chunk_type=chunk_type,
+                    start_pos=text.find(chapter_text),
+                    end_pos=text.find(chapter_text) + len(chapter_text),
+                    metadata={'chapter': True, 'long_text': True}
+                )
+                all_chunks.append(chunk)
+            else:
+                # 章节较大，需要进一步分割，使用更智能的语义分割
+                sub_chunks = self._split_semantically_with_context(chapter_text)
+                all_chunks.extend(sub_chunks)
+        
+        # 后处理：合并过小的块
+        all_chunks = self._merge_small_chunks(all_chunks)
+        
+        return all_chunks
+    
+    def _split_by_major_sections(self, text: str) -> List[str]:
+        """按大章节分割超长文本"""
+        # 使用更宽松的章节分割模式
+        section_pattern = r'(第[一二三四五六七八九十百千万\d]+[部卷篇][^\n]*)'
+        
+        # 查找所有大章节标题
+        section_matches = list(re.finditer(section_pattern, text))
+        
+        if not section_matches:
+            # 如果没有找到大章节，按更大的块分割
+            return self._split_by_large_blocks(text)
+        
+        sections = []
+        for i, match in enumerate(section_matches):
+            start_pos = match.start()
+            
+            # 确定章节结束位置
+            if i < len(section_matches) - 1:
+                end_pos = section_matches[i + 1].start()
+            else:
+                end_pos = len(text)
+            
+            section_text = text[start_pos:end_pos].strip()
+            if section_text:
+                sections.append(section_text)
+        
+        return sections
+    
+    def _split_by_large_blocks(self, text: str) -> List[str]:
+        """按大块分割文本（当没有章节结构时）"""
+        blocks = []
+        current_pos = 0
+        text_length = len(text)
+        
+        while current_pos < text_length:
+            # 确定当前块的结束位置
+            end_pos = min(current_pos + self.max_chunk_size * 2, text_length)
+            
+            # 如果不是文本末尾，尝试在语义边界处分割
+            if end_pos < text_length:
+                # 从后向前寻找合适的分割点
+                split_pos = self._find_semantic_split_point_large(text, current_pos, end_pos)
+                end_pos = split_pos
+            
+            # 提取文本块
+            block_text = text[current_pos:end_pos].strip()
+            
+            if block_text:
+                blocks.append(block_text)
+            
+            current_pos = end_pos
+        
+        return blocks
+    
+    def _find_semantic_split_point_large(self, text: str, start_pos: int, end_pos: int) -> int:
+        """在大文本中找到语义分割点"""
+        # 从后向前寻找分割点
+        search_text = text[start_pos:end_pos]
+        
+        # 优先尝试强边界
+        for pattern in self.semantic_boundaries['strong']:
+            matches = list(re.finditer(pattern, search_text))
+            if matches:
+                # 取最后一个匹配位置
+                last_match = matches[-1]
+                split_pos = start_pos + last_match.start()
+                
+                # 确保分割后的块不会太小
+                if split_pos - start_pos >= self.min_chunk_size:
+                    return split_pos
+        
+        # 如果没有找到强边界，尝试中等边界
+        for pattern in self.semantic_boundaries['medium']:
+            matches = list(re.finditer(pattern, search_text))
+            if matches:
+                # 取最后一个匹配位置
+                last_match = matches[-1]
+                split_pos = start_pos + last_match.start()
+                
+                # 确保分割后的块不会太小
+                if split_pos - start_pos >= self.min_chunk_size:
+                    return split_pos
+        
+        # 如果仍然没有找到合适的分割点，按最大块大小分割
+        return end_pos
+    
+    def _split_normal_text(self, text: str) -> List[TextChunk]:
+        """分割普通文本"""
         # 首先尝试按章节分割
         chapter_chunks = self._split_by_chapters(text)
         
@@ -239,6 +391,75 @@ class SimpleTextSplitter:
     
     def _find_semantic_split_point(self, text: str, start_pos: int, end_pos: int) -> int:
         """在语义边界处找到合适的分割点"""
+        # 从后向前寻找分割点
+        search_text = text[start_pos:end_pos]
+        
+        # 优先尝试强边界
+        for pattern in self.semantic_boundaries['strong']:
+            matches = list(re.finditer(pattern, search_text))
+            if matches:
+                # 取最后一个匹配位置
+                last_match = matches[-1]
+                split_pos = start_pos + last_match.start()
+                
+                # 确保分割后的块不会太小
+                if split_pos - start_pos >= self.min_chunk_size:
+                    return split_pos
+        
+        # 如果没有找到强边界，尝试中等边界
+        for pattern in self.semantic_boundaries['medium']:
+            matches = list(re.finditer(pattern, search_text))
+            if matches:
+                # 取最后一个匹配位置
+                last_match = matches[-1]
+                split_pos = start_pos + last_match.start()
+                
+                # 确保分割后的块不会太小
+                if split_pos - start_pos >= self.min_chunk_size:
+                    return split_pos
+        
+        # 如果仍然没有找到合适的分割点，按最大块大小分割
+        return end_pos
+    
+    def _split_semantically_with_context(self, text: str) -> List[TextChunk]:
+        """带上下文感知的语义分割"""
+        chunks = []
+        current_pos = 0
+        text_length = len(text)
+        
+        while current_pos < text_length:
+            # 确定当前块的结束位置
+            end_pos = min(current_pos + self.max_chunk_size, text_length)
+            
+            # 如果不是文本末尾，尝试在语义边界处分割
+            if end_pos < text_length:
+                # 从后向前寻找合适的分割点
+                split_pos = self._find_semantic_split_point_with_context(text, current_pos, end_pos)
+                end_pos = split_pos
+            
+            # 提取文本块
+            chunk_text = text[current_pos:end_pos].strip()
+            
+            if chunk_text:
+                # 检测文本类型
+                chunk_type = self._detect_text_type(chunk_text)
+                
+                # 创建文本块
+                chunk = TextChunk(
+                    text=chunk_text,
+                    chunk_type=chunk_type,
+                    start_pos=current_pos,
+                    end_pos=end_pos,
+                    metadata=self._extract_chunk_metadata(chunk_text, chunk_type)
+                )
+                chunks.append(chunk)
+            
+            current_pos = end_pos
+        
+        return chunks
+    
+    def _find_semantic_split_point_with_context(self, text: str, start_pos: int, end_pos: int) -> int:
+        """带上下文感知的语义分割点查找"""
         # 从后向前寻找分割点
         search_text = text[start_pos:end_pos]
         

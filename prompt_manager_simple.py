@@ -118,7 +118,53 @@ class SimplePromptManager:
 4. 自然融入世界观和风格特征
 5. 遵循上述文学手法要求
 
-{context_info}"""
+{context_info}""",
+            
+            "long_text_user_prompt": """请改写以下长文本段落，注意保持情节连贯性和字数相近：
+
+【原文 - 文本块 {chunk_id}】
+{text}
+
+【长文本改写要求】
+1. 保持核心情节、人物关系和世界观设定
+2. 重塑表达方式，避免相似度过高，但确保情节逻辑连贯
+3. 确保改写后字数与原文相近（误差控制在±15%以内）
+4. 充分利用长文本优势，保持上下文连贯性和情节发展逻辑
+5. 自然融入世界观和风格特征，确保人物性格一致性
+6. 遵循上述文学手法要求，注重修炼体系和境界描写
+7. 确保段落结构完整，上下文衔接自然流畅
+
+{context_info}
+
+【重要提示】
+- 这是长文本处理，请特别注意情节的连贯性和逻辑性
+- 避免在段落中间突然改变叙事风格或人物性格
+- 确保改写后的文本能够独立成章，同时与整体情节保持一致""",
+            
+            "ultra_long_text_user_prompt": """请改写以下超长文本段落，这是1M上下文处理的一部分，请特别注意整体连贯性：
+
+【原文 - 文本块 {chunk_id}（长度：{text_length}字符）】
+{text}
+
+【超长文本改写要求】
+1. 保持核心情节、人物关系和世界观设定的完整性
+2. 重塑表达方式，避免相似度过高，但确保超长文本的情节逻辑连贯
+3. 确保改写后字数与原文相近（误差控制在±10%以内）
+4. 充分利用1M上下文优势，保持超长文本的上下文连贯性和情节发展逻辑
+5. 自然融入世界观和风格特征，确保人物性格在超长文本中的一致性
+6. 遵循上述文学手法要求，注重修炼体系和境界描写的连贯性
+7. 确保段落结构完整，上下文衔接自然流畅，为后续处理提供良好基础
+
+【超长文本处理策略】
+- 这是超长文本处理的关键部分，请特别注意与前文和后文的衔接
+- 保持叙事风格和人物性格在整个超长文本中的统一性
+- 确保改写后的文本能够与前后文无缝衔接
+- 适当增加过渡性内容，确保情节发展的连贯性
+
+【重要提示】
+- 这是1M上下文处理的核心部分，请特别注意整体故事的连贯性
+- 避免在超长文本中间突然改变叙事风格或人物性格
+- 确保改写后的文本能够作为超长文本的重要组成部分，保持整体一致性"""
         }
         
         return templates
@@ -136,6 +182,11 @@ class SimplePromptManager:
         # 构建上下文信息
         context_info = self._build_context_info(metadata)
         
+        # 检查文本长度类型
+        text_length = len(text)
+        is_long_text = text_length > 10000
+        is_ultra_long = text_length > 50000
+        
         # 渲染提示词
         system_prompt = self.templates["system_prompt"].format(
             worldview=worldview,
@@ -144,10 +195,25 @@ class SimplePromptManager:
             style_profile=style_profile_str
         )
         
-        user_prompt = self.templates["user_prompt"].format(
-            text=text,
-            context_info=context_info
-        )
+        # 根据文本长度选择不同的用户提示词模板
+        if is_ultra_long:
+            user_prompt = self.templates["ultra_long_text_user_prompt"].format(
+                text=text,
+                context_info=context_info,
+                chunk_id=chunk_id,
+                text_length=text_length
+            )
+        elif is_long_text:
+            user_prompt = self.templates["long_text_user_prompt"].format(
+                text=text,
+                context_info=context_info,
+                chunk_id=chunk_id
+            )
+        else:
+            user_prompt = self.templates["user_prompt"].format(
+                text=text,
+                context_info=context_info
+            )
         
         return [
             {"role": "system", "content": system_prompt},
