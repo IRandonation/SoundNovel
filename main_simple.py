@@ -12,8 +12,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
-from openai import OpenAI
-from openai.types.chat import ChatCompletion
+from zai import ZhipuAiClient
 
 # 导入核心模块
 from document_importer_simple import SimpleDocumentImporter
@@ -30,10 +29,7 @@ class SimpleNovelRewriter:
         self.config = self._load_config(config_path)
         
         # 初始化API客户端
-        self.client = OpenAI(
-            api_key=self.config["api_key"],
-            base_url=self.config.get("api_url", "https://open.bigmodel.cn")
-        )
+        self.client = ZhipuAiClient(api_key=self.config["api_key"])
         
         # 初始化核心组件
         self.document_importer = SimpleDocumentImporter()
@@ -54,8 +50,7 @@ class SimpleNovelRewriter:
         """加载配置文件"""
         default_config = {
             "api_key": "your_api_key_here",
-            "api_url": "https://api.deepseek.com",
-            "model": "deepseek-chat",
+            "model": "glm-4-long",
             "temperature": 0.8,
             "max_tokens": 2000,
             "chunk_size": 2000,
@@ -132,7 +127,7 @@ class SimpleNovelRewriter:
                 
                 # 构建提示词
                 prompt_messages = self.prompt_manager.build_prompt(
-                    text=chunk,
+                    text=chunk.text,
                     chunk_id=chunk_id,
                     metadata={
                         "source_file": input_path.name,
@@ -209,7 +204,7 @@ class SimpleNovelRewriter:
                 if is_ultra_long:
                     # 超长文本：使用更高的温度和更长的输出
                     temperature = self.config["temperature"] * 0.8  # 降低随机性
-                    max_tokens = min(self.config["max_tokens"] * 2, 32000)  # 增加输出长度
+                    max_tokens = min(self.config["max_tokens"] * 3, 50000)  # 大幅增加输出长度
                     top_p = 0.95  # 增加采样范围
                 else:
                     # 普通文本：使用标准参数
@@ -217,20 +212,17 @@ class SimpleNovelRewriter:
                     max_tokens = self.config["max_tokens"]
                     top_p = 0.9
                 
-                response: ChatCompletion = self.client.chat.completions.create(
+                response = self.client.chat.completions.create(
                     model=self.config["model"],
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    top_p=top_p,
-                    frequency_penalty=0.1 if is_ultra_long else 0.2,  # 超长文本降低频率惩罚
-                    stream=False
+                    messages=messages
                 )
                 
                 result = response.choices[0].message.content.strip()
                 
                 # 检查字数是否过短
-                min_length_ratio = 0.5 if is_ultra_long else 0.6
+                min_length_ratio = 0.5 if is_ultra_long else 0.4  # 提高最小长度比例要求
+                reslen = len(result)
+                orilen = len(original_text)
                 if len(result) < len(original_text) * min_length_ratio:
                     if attempt < self.config["max_retries"] - 1:
                         time.sleep(self.config["retry_delay"] * (attempt + 1))
