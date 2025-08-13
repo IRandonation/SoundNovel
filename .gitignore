@@ -1,5 +1,6 @@
 # API配置文件 - 包含敏感信息
 api_config.json
+config.json
 
 # Python缓存文件
 __pycache__/
