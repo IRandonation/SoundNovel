@@ -182,16 +182,27 @@ class NovelGenerator:
         # 获取世界观的具体描述
         world_description = ""
         # 根据选择的世界观获取对应的描述
-        if selected_world == "现代都市背景" and "modern_urban" in world_descriptions:
-            world_description = world_descriptions["modern_urban"]
-        elif selected_world == "奇幻修仙背景" and "fantasy_cultivation" in world_descriptions:
-            world_description = world_descriptions["fantasy_cultivation"]
-        elif selected_world == "科幻未来背景" and "scifi_future" in world_descriptions:
-            world_description = world_descriptions["scifi_future"]
-        elif selected_world == "古代宫廷背景" and "ancient_court" in world_descriptions:
-            world_description = world_descriptions["ancient_court"]
-        elif selected_world == "江湖武侠背景" and "martial_arts" in world_descriptions:
-            world_description = world_descriptions["martial_arts"]
+        if selected_world == "玄幻修真世界" and "fantasy_cultivation" in world_descriptions:
+            world_description = world_descriptions ["fantasy_cultivation"]
+        elif selected_world == "都市异能世界" and "urban_superpower" in world_descriptions:
+            world_description = world_descriptions ["urban_superpower"]
+        elif selected_world == "末世求生世界" and "apocalyptic_survival" in world_descriptions:
+            world_description = world_descriptions ["apocalyptic_survival"]
+        elif selected_world == "系统流穿书世界" and "system_transmigration" in world_descriptions:
+            world_description = world_descriptions ["system_transmigration"]
+        elif selected_world == "星际修仙世界" and "interstellar_cultivation" in world_descriptions:
+            world_description = world_descriptions ["interstellar_cultivation"]
+        elif selected_world == "武侠江湖世界" and "martial_arts_world" in world_descriptions:
+            world_description = world_descriptions ["martial_arts_world"]
+        elif selected_world == "无限流副本世界" and "infinite_dungeon" in world_descriptions:
+            world_description = world_descriptions ["infinite_dungeon"]
+        elif selected_world == "田园休闲世界" and "pastoral_leisure" in world_descriptions:
+            world_description = world_descriptions ["pastoral_leisure"]
+        elif selected_world == "仙侠神话世界" and "xianxia_myth" in world_descriptions:
+            world_description = world_descriptions ["xianxia_myth"]
+        elif selected_world == "奇幻魔法世界" and "fantasy_magic" in world_descriptions:
+            world_description = world_descriptions ["fantasy_magic"]
+
         
         return f"""
     注意：请将故事背景改写为"{selected_world}"设定，保持原有的情节逻辑和人物关系，但使用新的背景设定和人物名称。
