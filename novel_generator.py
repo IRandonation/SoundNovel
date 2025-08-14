@@ -365,45 +365,106 @@ class NovelGenerator:
         
         return outlines
     
-    def stage3_expand_chapter(self, chapter_outline: str) -> str:
+    def stage3_expand_chapter(self, chapter_outline: str, previous_chapters: List[str] = None) -> str:
         """
         阶段3: 每章大纲 → 1k扩写
         
         Args:
-            chapter_outline: 章节大纲
+            chapter_outline: 章节大纲（仅作为prompt指导，不直接扩写）
+            previous_chapters: 前两章的内容列表，用于提供上下文
             
         Returns:
             扩写后的章节内容
         """
         logger.info("开始阶段3: 章节扩写到1k字")
         
+        # 准备上下文信息
+        context_info = ""
+        if previous_chapters and len(previous_chapters) >= 2:
+            # 获取前两章的内容作为上下文
+            chapter1_content = previous_chapters[-2] if len(previous_chapters) >= 2 else ""
+            chapter2_content = previous_chapters[-1] if len(previous_chapters) >= 1 else ""
+            
+            context_info = f"""
+    【前两章上下文】
+    第一章内容：
+    {chapter1_content}
+    
+    第二章内容：
+    {chapter2_content}
+    """
+        elif previous_chapters and len(previous_chapters) == 1:
+            # 只有前一章内容
+            chapter1_content = previous_chapters[0]
+            context_info = f"""
+    【前一章上下文】
+    第一章内容：
+    {chapter1_content}
+    """
+        
         prompt = self._format_prompt(
             "stage3_chapter_expansion",
-            chapter_outline=chapter_outline
+            chapter_outline=chapter_outline,
+            previous_context=context_info
         )
         
         response = self._call_api(prompt, "stage3_chapter_expansion")
+        
+        # 记录stage3扩写内容的前50字（新增日志）
+        if response:
+            preview = response[:50]
+            if len(response) > 50:
+                preview += "..."
+            logger.info(f"Stage3扩写内容（前50字）: {preview}")
+        else:
+            logger.warning("Stage3扩写响应内容为空")
         
         # 保存结果
         self._save_output("stage3", response, "stage3_expanded_chapter.txt")
         
         return response
     
-    def stage4_final_expansion(self, chapter_content: str) -> str:
+    def stage4_final_expansion(self, chapter_content: str, previous_chapters: List[str] = None) -> str:
         """
         阶段4: 1k → 2k扩写（深度优化和润色）
         
         Args:
-            chapter_content: 章节内容
+            chapter_content: 章节内容（stage3的输出结果）
+            previous_chapters: 前两章的内容列表，用于提供上下文
             
         Returns:
             最终扩写后的章节内容
         """
         logger.info("开始阶段4: 最终扩写到2k字")
         
+        # 准备上下文信息
+        context_info = ""
+        if previous_chapters and len(previous_chapters) >= 2:
+            # 获取前两章的内容作为上下文
+            chapter1_content = previous_chapters[-2] if len(previous_chapters) >= 2 else ""
+            chapter2_content = previous_chapters[-1] if len(previous_chapters) >= 1 else ""
+            
+            context_info = f"""
+【前两章上下文】
+第一章内容：
+{chapter1_content}
+
+第二章内容：
+{chapter2_content}
+"""
+        elif previous_chapters and len(previous_chapters) == 1:
+            # 只有前一章内容
+            chapter1_content = previous_chapters[0]
+            context_info = f"""
+【前一章上下文】
+第一章内容：
+{chapter1_content}
+"""
+        
         prompt = self._format_prompt(
             "stage4_final_expansion",
-            chapter_content=chapter_content
+            chapter_content=chapter_content,
+            previous_context=context_info
         )
         
         response = self._call_api(prompt, "stage4_final_expansion")
@@ -500,27 +561,36 @@ class NovelGenerator:
         
         # 处理每个章节
         processed_chapters = []
-        for i, outline in enumerate(chapter_outlines):
-            logger.info(f"处理第 {i+1} 章")
+        previous_chapters_content = []  # 存储前两章的内容
+        
+        for i, outline in enumerate(chapter_outlines, start=1):
+            logger.info(f"处理第 {i} 章")
             
             try:
-                # 阶段3: 扩写到1k字
-                stage3_result = self.stage3_expand_chapter(outline)
+                # 阶段3: 扩写到1k字，传递前两章内容作为上下文
+                stage3_result = self.stage3_expand_chapter(outline, previous_chapters_content)
                 
-                # 阶段4: 最终扩写到2k字
-                stage4_result = self.stage4_final_expansion(stage3_result)
+                # 阶段4: 最终扩写到2k字，传递前两章内容作为上下文
+                stage4_result = self.stage4_final_expansion(stage3_result, previous_chapters_content)
                 
                 processed_chapters.append({
-                    "chapter_number": i + 1,
+                    "chapter_number": i,
                     "outline": outline,
                     "stage3_content": stage3_result,
                     "stage4_content": stage4_result
                 })
                 
+                # 将当前章节的stage4结果添加到前两章内容列表中
+                previous_chapters_content.append(stage4_result)
+                
+                # 只保留最近两章的内容
+                if len(previous_chapters_content) > 2:
+                    previous_chapters_content.pop(0)
+                
             except Exception as e:
-                logger.error(f"处理第 {i+1} 章失败: {e}")
+                logger.error(f"处理第 {i} 章失败: {e}")
                 # 保存失败的章节
-                with open(f"failed/chapter_{i+1}_failed.txt", 'w', encoding='utf-8') as f:
+                with open(f"failed/chapter_{i}_failed.txt", 'w', encoding='utf-8') as f:
                     f.write(outline)
                 continue
         
