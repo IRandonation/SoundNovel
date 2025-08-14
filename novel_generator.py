@@ -137,6 +137,13 @@ class NovelGenerator:
             rhythm_info = rhythm_config.get("rules", "")
             kwargs["rhythm_sensation_control"] = rhythm_info
         
+        # 处理章节位置信息
+        if "is_final_chapter" in kwargs:
+            if kwargs["is_final_chapter"]:
+                kwargs["is_final_chapter"] = "这是最后一章，请提供完整的结局"
+            else:
+                kwargs["is_final_chapter"] = "这不是最后一章，请制造悬念"
+        
         return prompt_template.format(**kwargs)
     
     def _generate_copyright_bypass_info(self) -> str:
@@ -324,54 +331,62 @@ class NovelGenerator:
         }
     
     def stage2_generate_chapter_outlines(self, summary: str, foreshadowing: str) -> List[str]:
-        """
-        阶段2: 基于剧情摘要和伏笔构建章节大纲 (100字/章)
-        
-        Args:
-            summary: 剧情摘要
-            foreshadowing: 伏笔分析
-            
-        Returns:
-            章节大纲列表
-        """
         logger.info("开始阶段2: 生成章节大纲")
-        
         prompt = self._format_prompt(
             "stage2_chapter_outline",
             summary=summary,
             foreshadowing=foreshadowing
         )
-        
         response = self._call_api(prompt, "stage2_chapter_outline")
-        
-        # 解析响应，提取章节大纲
+
         outlines = []
-        lines = response.split('\n')
-        current_outline = ""
+        for line in response.splitlines():
+            line = line.strip()
+            
+            # 跳过空行和纯标题行
+            if not line or line in ["【章节大纲】", "章节大纲"]:
+                continue
+            
+            # 情况1：处理 "第X章：标题" 格式
+            if line.startswith("第") and "章" in line:
+                # 去掉前缀里的"第X章："或"第X章 "，只保留纯大纲
+                if "：" in line:
+                    core = line.split("：", 1)[-1].strip()
+                else:
+                    core = line.replace("第", "").replace("章", "").strip()
+                
+                # 限制长度 ≈ 100 字
+                if len(core) > 120:
+                    core = core[:120] + "…"
+                outlines.append(core)
+            # 情况2：处理纯标题格式（如 "剑影初现"）
+            elif not line.startswith("第") and len(line) > 1:
+                # 直接使用作为章节标题
+                if len(line) > 120:
+                    line = line[:120] + "…"
+                outlines.append(line)
         
-        for line in lines:
-            if line.startswith("第") and "章：" in line:
-                if current_outline:
-                    outlines.append(current_outline.strip())
-                current_outline = line + "\n"
-            else:
-                current_outline += line + "\n"
+        if not outlines:
+            raise ValueError("未能解析出任何章节大纲，请检查 prompt 或 API 返回格式")
         
-        if current_outline:
-            outlines.append(current_outline.strip())
+        # 保存完整的API响应用于调试
+        logger.info(f"阶段2完整API响应：\n{response}")
+        logger.info(f"解析出的章节大纲数量：{len(outlines)}")
+        logger.info(f"解析出的章节大纲：{outlines}")
         
-        # 保存结果
-        self._save_output("stage2", response, "stage2_chapter_outlines.txt")
+        # 保存结果（仅调试用途，可保留）
+        self._save_output("stage2", "\n".join(outlines), "stage2_chapter_outlines.txt")
         
         return outlines
     
-    def stage3_expand_chapter(self, chapter_outline: str, previous_chapters: List[str] = None) -> str:
+    def stage3_expand_chapter(self, chapter_outline: str, previous_chapters: List[str] = None, is_final_chapter: bool = False) -> str:
         """
         阶段3: 每章大纲 → 1k扩写
         
         Args:
             chapter_outline: 章节大纲（仅作为prompt指导，不直接扩写）
             previous_chapters: 前两章的内容列表，用于提供上下文
+            is_final_chapter: 是否为最后一章
             
         Returns:
             扩写后的章节内容
@@ -405,7 +420,8 @@ class NovelGenerator:
         prompt = self._format_prompt(
             "stage3_chapter_expansion",
             chapter_outline=chapter_outline,
-            previous_context=context_info
+            previous_context=context_info,
+            is_final_chapter=is_final_chapter
         )
         
         response = self._call_api(prompt, "stage3_chapter_expansion")
@@ -424,13 +440,14 @@ class NovelGenerator:
         
         return response
     
-    def stage4_final_expansion(self, chapter_content: str, previous_chapters: List[str] = None) -> str:
+    def stage4_final_expansion(self, chapter_content: str, previous_chapters: List[str] = None, is_final_chapter: bool = False) -> str:
         """
         阶段4: 1k → 2k扩写（深度优化和润色）
         
         Args:
             chapter_content: 章节内容（stage3的输出结果）
             previous_chapters: 前两章的内容列表，用于提供上下文
+            is_final_chapter: 是否为最后一章
             
         Returns:
             最终扩写后的章节内容
@@ -464,7 +481,8 @@ class NovelGenerator:
         prompt = self._format_prompt(
             "stage4_final_expansion",
             chapter_content=chapter_content,
-            previous_context=context_info
+            previous_context=context_info,
+            is_final_chapter=is_final_chapter
         )
         
         response = self._call_api(prompt, "stage4_final_expansion")
@@ -567,11 +585,14 @@ class NovelGenerator:
             logger.info(f"处理第 {i} 章")
             
             try:
+                # 判断是否为最后一章
+                is_final_chapter = (i == len(chapter_outlines))
+                
                 # 阶段3: 扩写到1k字，传递前两章内容作为上下文
-                stage3_result = self.stage3_expand_chapter(outline, previous_chapters_content)
+                stage3_result = self.stage3_expand_chapter(outline, previous_chapters_content, is_final_chapter)
                 
                 # 阶段4: 最终扩写到2k字，传递前两章内容作为上下文
-                stage4_result = self.stage4_final_expansion(stage3_result, previous_chapters_content)
+                stage4_result = self.stage4_final_expansion(stage3_result, previous_chapters_content, is_final_chapter)
                 
                 processed_chapters.append({
                     "chapter_number": i,
