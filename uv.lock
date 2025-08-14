@@ -364,6 +364,7 @@ dependencies = [
     { name = "werkzeug" },
     { name = "zai" },
     { name = "zai-sdk" },
+    { name = "zhipuai" },
 ]
 
 [package.metadata]
@@ -377,6 +378,7 @@ requires-dist = [
     { name = "werkzeug", specifier = ">=3.1.3" },
     { name = "zai", specifier = ">=0.0.2" },
     { name = "zai-sdk", specifier = ">=0.0.3.1" },
+    { name = "zhipuai", specifier = ">=2.1.5.20250801" },
 ]
 
 [[package]]
@@ -444,4 +446,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/4c/79/95d34d181e000a9629265efda85bc2a9d7ed4cd784d2dc1816a64be46922/zai_sdk-0.0.3.1.tar.gz", hash = "sha256:a0b1790af66fb3713dc1379bc604294c62ad2869b9dcb9e37874ce800be66d8d", size = 69923, upload-time = "2025-08-07T10:31:34.497Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/93/d5/8cf164a84ddd4cd631c8e23fd32071314f730923f8f819041b0031952ccf/zai_sdk-0.0.3.1-py3-none-any.whl", hash = "sha256:199ceaaccbbb05057dfd242377b48452692eee049d033be0e127868d4627dda4", size = 110246, upload-time = "2025-08-07T10:31:33.558Z" },
+]
+
+[[package]]
+name = "zhipuai"
+version = "2.1.5.20250801"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cachetools" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "pyjwt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/23/49aae9dc28443ab7d29f9b15ab3b1ceec634210c1ed24ee1c9fa34167351/zhipuai-2.1.5.20250801.tar.gz", hash = "sha256:1735638eb5ffb5e34dd977be4f5f6e8bbb59076b2c4e0d1cc0f59324006cc5d9", size = 68934, upload-time = "2025-08-01T11:16:16.075Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/97/4aea38358f2f16d3b40234aeaa901154d52a2e852f4e538f0d60533de1ac/zhipuai-2.1.5.20250801-py3-none-any.whl", hash = "sha256:25b9c3d7eb584c39565836f9e9c00851beab5c7ac1991df949b40703dd99c34e", size = 116286, upload-time = "2025-08-01T11:16:14.795Z" },
 ]

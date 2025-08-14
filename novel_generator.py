@@ -77,58 +77,23 @@ class NovelGenerator:
             raise
     
     def _init_api_client(self):
-        """初始化API客户端"""
+        """初始化 ZhipuAiClient"""
+        api_key = self.config.get("api_key", "")
+        if not api_key:
+            raise ValueError("config.json 中缺少 api_key 字段")
+
+        # 如果用户本地已有环境变量 ZAI_API_KEY，也支持直接读取
+        api_key = api_key or os.getenv("ZAI_API_KEY")
+        if not api_key:
+            raise ValueError("未找到智谱 API 密钥，请配置 config.json 或环境变量 ZAI_API_KEY")
+
         try:
-            # 尝试使用不同的API客户端库
-            api_key = self.config.get("api_key", "")
-            api_base_url = self.config.get("api_base_url", "")
-            
-            if not api_key:
-                logger.error("API密钥未配置")
-                raise ValueError("API密钥未配置")
-            
-            # 方法1: 尝试使用 openai 库
-            try:
-                import openai
-                client = openai.OpenAI(
-                    api_key=api_key,
-                    base_url=api_base_url
-                )
-                logger.info("使用 OpenAI 客户端")
-                return client
-            except ImportError:
-                pass
-            
-            # 方法2: 尝试使用 zai-sdk
-            try:
-                from zai import AsyncClient
-                client = AsyncClient(
-                    api_key=api_key,
-                    base_url=api_base_url
-                )
-                logger.info("使用 ZAI 客户端")
-                return client
-            except ImportError:
-                pass
-            
-            # 方法3: 尝试使用 httpx 直接请求
-            try:
-                import httpx
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
-                client = httpx.Client(base_url=api_base_url, headers=headers)
-                logger.info("使用 HTTPX 客户端")
-                return client
-            except ImportError:
-                pass
-            
-            logger.error("无法找到可用的HTTP客户端库，请安装 openai、zai-sdk 或 httpx")
-            raise ImportError("无法找到可用的HTTP客户端库")
-            
-        except Exception as e:
-            logger.error(f"初始化API客户端失败: {e}")
+            from zhipuai import ZhipuAI   # 官方包
+            client = ZhipuAI(api_key=api_key)
+            logger.info("已使用官方 ZhipuAiClient")
+            return client
+        except ImportError as e:
+            logger.error("未安装 zhipuai 包：pip install zhipuai")
             raise
     
     def _get_model_for_stage(self, stage_name: str) -> str:
@@ -141,10 +106,10 @@ class NovelGenerator:
         elif stage_name in ["stage2_chapter_outline"]:
             return models.get("outline_model", models.get("summary_model", "glm-4-long"))
         elif stage_name in ["stage3_chapter_expansion", "stage4_final_expansion"]:
-            return models.get("expansion_model", "glm-4.5-air")
+            return models.get("expansion_model", "glm-4.5-flash")
         else:
             # 默认模型
-            return models.get("default_model", "glm-4.5-air")
+            return models.get("default_model", "glm-4.5-flash")
     
     def _format_prompt(self, stage_name: str, **kwargs) -> str:
         """格式化prompt"""
@@ -157,11 +122,20 @@ class NovelGenerator:
         if self.config.get("copyright_bypass", False) and "copyright_bypass_info" in prompt_template:
             copyright_info = self._generate_copyright_bypass_info()
             kwargs["copyright_bypass_info"] = copyright_info
+            # 添加选定的世界观信息
+            selected_world = self._get_selected_world()
+            kwargs["selected_world"] = selected_world
         
-        # 如果启用了版权规避，添加人物替换指导
-        if self.config.get("copyright_bypass", False) and "character_replacement_guidance" in prompt_template:
-            character_guidance = self._get_character_replacement_guidance()
-            kwargs["character_replacement_guidance"] = character_guidance
+        # # 如果启用了版权规避，添加人物替换指导
+        # if self.config.get("copyright_bypass", False) and "character_replacement_guidance" in prompt_template:
+        #     character_guidance = self._get_character_replacement_guidance()
+        #     kwargs["character_replacement_guidance"] = character_guidance
+        
+        # 添加节奏感觉控制信息
+        rhythm_config = self.prompts.get("rhythm_sensation_control", {})
+        if rhythm_config.get("enabled", False) and "rhythm_sensation_control" in prompt_template:
+            rhythm_info = rhythm_config.get("rules", "")
+            kwargs["rhythm_sensation_control"] = rhythm_info
         
         return prompt_template.format(**kwargs)
     
@@ -205,31 +179,35 @@ class NovelGenerator:
 
         
         return f"""
-    注意：请将故事背景改写为"{selected_world}"设定，保持原有的情节逻辑和人物关系，但使用新的背景设定和人物名称。
+    注意：请将故事背景改写为"{selected_world}"设定，保持原有的情节逻辑和人物关系。
     
     世界观详细描述：
     {world_description}
     
     要求：
-    1. 将古代背景元素转换为{selected_world}的对应元素
-    2. 为所有主要人物创建新的名称和身份，保持人物性格特征不变
+    1. 将背景元素转换为{selected_world}的对应元素
+    2. 保持人物性格特征，名称和身份不变
     3. 调整环境描写、服饰、道具等细节以适应新的背景
     4. 确保改写后的内容自然流畅，逻辑一致
     """
     
-    def _get_character_replacement_guidance(self) -> str:
-        """获取人物替换指导"""
-        copyright_config = self.prompts.get("copyright_bypass", {})
-        examples = copyright_config.get("name_mapping_examples", "")
+    def _get_selected_world(self) -> str:
+        """获取选定的世界观"""
+        return self.config.get("world_style", "仙侠神话世界")
+    
+    # def _get_character_replacement_guidance(self) -> str:
+    #     """获取人物替换指导"""
+    #     copyright_config = self.prompts.get("copyright_bypass", {})
+    #     examples = copyright_config.get("name_mapping_examples", "")
         
-        if examples:
-            return f"""
-    人物名称替换指导：请参考以下示例进行人物名称和身份的替换：
-    {examples}
-    注意：保持人物的性格特征、关系和核心行为不变，只改变名称和外在身份。
-    """
-        else:
-            return "请在叙述中使用新的人物名称和身份设定，避免使用原文中的人物名称。"
+    #     if examples:
+    #         return f"""
+    # 人物名称替换指导：请参考以下示例进行人物名称和身份的替换：
+    # {examples}
+    # 注意：保持人物的性格特征、关系和核心行为不变，只改变名称和外在身份。
+    # """
+    #     else:
+    #         return "请在叙述中使用新的人物名称和身份设定，避免使用原文中的人物名称。"
     
     def _save_output(self, stage_name: str, content: str, filename: str = None):
         """保存输出结果"""
@@ -265,60 +243,28 @@ class NovelGenerator:
             raise
     
     def _call_api(self, prompt: str, stage_name: str = None) -> str:
-        """调用API生成内容"""
+        """统一使用 ZhipuAI 官方 SDK 调用"""
+        model = self._get_model_for_stage(stage_name) \
+                if stage_name else self.config.get("model", "glm-4-flash-250414")
+
+        max_tokens = self.config.get("max_tokens", 8000)
+        temperature = self.config.get("temperature", 0.7)
+        top_p = self.config.get("top_p", 0.7)
+
         try:
-            # 根据阶段获取对应的模型
-            model = self._get_model_for_stage(stage_name) if stage_name else self.config.get("model", "gpt-3.5-turbo")
-            logger.info(f"调用API - 模型: {model}, 阶段: {stage_name}")
-            
-            # 检查客户端类型并调用相应的方法
-            if hasattr(self.api_client, 'chat'):
-                # OpenAI 客户端
-                logger.info("使用OpenAI客户端调用API")
-                response = self.api_client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=self.config.get("max_tokens", 2000),
-                    temperature=self.config.get("temperature", 0.7)
-                )
-                content = response.choices[0].message.content
-                logger.info(f"OpenAI API调用成功，响应长度: {len(content)}")
-                return content
-            elif hasattr(self.api_client, 'chat completions'):
-                # ZAI 客户端
-                logger.info("使用ZAI客户端调用API")
-                response = self.api_client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=self.config.get("max_tokens", 2000),
-                    temperature=self.config.get("temperature", 0.7)
-                )
-                content = response.choices[0].message.content
-                logger.info(f"ZAI API调用成功，响应长度: {len(content)}")
-                return content
-            elif hasattr(self.api_client, 'post'):
-                # HTTPX 客户端
-                logger.info("使用HTTPX客户端调用API")
-                import json
-                response = self.api_client.post(
-                    "/chat/completions",
-                    json={
-                        "model": model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": self.config.get("max_tokens", 2000),
-                        "temperature": self.config.get("temperature", 0.7)
-                    }
-                )
-                response_data = response.json()
-                content = response_data["choices"][0]["message"]["content"]
-                logger.info(f"HTTPX API调用成功，响应长度: {len(content)}")
-                return content
-            else:
-                raise ValueError("不支持的API客户端类型")
-                
+            response = self.api_client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                stream=False
+            )
+            content = response.choices[0].message.content
+            logger.info(f"API 调用成功，模型={model}，返回长度={len(content)}")
+            return content
         except Exception as e:
-            logger.error(f"API调用失败: {e}")
-            logger.error(f"调用参数 - 模型: {model}, 阶段: {stage_name}")
+            logger.error(f"智谱AI API 调用失败: {e}")
             raise
     
     def stage1_generate_summary(self, input_text: str) -> Dict[str, str]:
