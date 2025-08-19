@@ -80,9 +80,10 @@ class OutlineGenerator:
 主要人物：{self._format_characters(core_setting.get('人物小传', {}))}
 
 【整体大纲】
-第一幕：{overall_outline.get('第一幕', '')}
-第二幕：{overall_outline.get('第二幕', '')}
-第三幕：{overall_outline.get('第三幕', '')}
+# 动态构建所有幕的内容
+{self._build_acts_text(overall_outline)}
+
+
 关键转折点：{overall_outline.get('关键转折点', '')}
 
 【生成要求】
@@ -109,6 +110,107 @@ class OutlineGenerator:
             else:
                 result.append(f"{name}: {info}")
         return "; ".join(result)
+    
+    def _build_acts_text(self, overall_outline: Dict[str, Any]) -> str:
+        """动态构建所有幕的内容文本"""
+        acts_content = []
+        act_number = 1
+        
+        # 中文数字映射
+        chinese_numbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+                          "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
+        
+        while True:
+            # 尝试数字格式（第1幕、第2幕等）
+            act_key_numeric = f"第{act_number}幕"
+            act_content = overall_outline.get(act_key_numeric, '')
+            
+            # 如果数字格式没有找到，尝试中文格式（第一幕、第二幕等）
+            if not act_content and act_number <= len(chinese_numbers):
+                act_key_chinese = f"第{chinese_numbers[act_number-1]}幕"
+                act_content = overall_outline.get(act_key_chinese, '')
+            
+            if act_content:
+                # 使用找到的键名作为显示名称
+                display_key = act_key_numeric if overall_outline.get(act_key_numeric) else act_key_chinese
+                acts_content.append(f"{display_key}：{act_content}")
+                act_number += 1
+            else:
+                break
+        
+        return '\n'.join(acts_content)
+    
+    def extract_total_chapters(self, overall_outline: Dict[str, Any]) -> int:
+        """
+        从整体大纲中提取总章节数量
+        
+        Args:
+            overall_outline: 整体大纲
+            
+        Returns:
+            int: 总章节数量
+        """
+        try:
+            total_chapters = 0
+            act_number = 1
+            
+            # 中文数字映射
+            chinese_numbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+                              "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
+            
+            while True:
+                # 尝试数字格式（第1幕、第2幕等）
+                act_key_numeric = f"第{act_number}幕"
+                act_content = overall_outline.get(act_key_numeric, '')
+                
+                # 如果数字格式没有找到，尝试中文格式（第一幕、第二幕等）
+                if not act_content and act_number <= len(chinese_numbers):
+                    act_key_chinese = f"第{chinese_numbers[act_number-1]}幕"
+                    act_content = overall_outline.get(act_key_chinese, '')
+                
+                if act_content:
+                    # 从幕的内容中提取章节数量
+                    # 支持多种格式："第1-15章"、"第 1-15 章"、"第1章到第15章"等
+                    import re
+                    
+                    # 尝试匹配章节数量
+                    chapter_patterns = [
+                        r'第\s*(\d+)\s*-\s*(\d+)\s*章',  # 第1-15章
+                        r'第\s*(\d+)\s*章\s*到\s*第\s*(\d+)\s*章',  # 第1章到第15章
+                        r'(\d+)\s*-\s*(\d+)\s*章',  # 1-15章
+                        r'第\s*(\d+)\s*章',  # 第1章（单章）
+                    ]
+                    
+                    max_chapter_in_act = 0
+                    for pattern in chapter_patterns:
+                        matches = re.findall(pattern, act_content)
+                        for match in matches:
+                            if len(match) == 2:  # 范围格式
+                                start_chapter = int(match[0])
+                                end_chapter = int(match[1])
+                                max_chapter_in_act = max(max_chapter_in_act, end_chapter)
+                            else:  # 单章格式
+                                chapter_num = int(match[0])
+                                max_chapter_in_act = max(max_chapter_in_act, chapter_num)
+                    
+                    if max_chapter_in_act > 0:
+                        total_chapters = max(total_chapters, max_chapter_in_act)
+                    
+                    act_number += 1
+                else:
+                    break
+            
+            # 如果没有找到章节数量，返回默认值
+            if total_chapters == 0:
+                self.logger.warning("无法从整体大纲中提取章节数量，使用默认值150")
+                return 150
+            
+            self.logger.info(f"从整体大纲中提取到总章节数量: {total_chapters}")
+            return total_chapters
+            
+        except Exception as e:
+            self.logger.error(f"提取章节数量失败: {e}")
+            return 150  # 返回默认值
     
     def _call_ai_api(self, prompt: str) -> str:
         """调用AI API生成大纲"""
@@ -220,20 +322,40 @@ class OutlineGenerator:
                 raise ValueError(f"章节 {chapter} 内容格式错误")
             
             for field in required_fields:
-                # 检查字段是否存在，包括可能的变体
+                # 检查字段是否存在
                 if field not in content:
                     # 检查字段变体
-                    if field == '字数目标' and '字数目标' in content:
-                        # 如果找到变体，重命名字段
-                        content['字数目标'] = content.pop('字数目标')
-                    elif field not in content:
+                    if field == '字数目标':
+                        # 检查可能的变体
+                        if '字数目标' in content:
+                            content['字数目标'] = content.pop('字数目标')
+                        elif '目标字数' in content:
+                            content['字数目标'] = content.pop('目标字数')
+                        elif '字数' in content:
+                            content['字数目标'] = content.pop('字数')
+                        else:
+                            # 如果没有找到任何变体，设置默认值
+                            content['字数目标'] = "1500字左右"
+                    elif field == '伏笔回收':
+                        # 伏笔回收可以是可选的，如果没有则设置为"无"
+                        if '伏笔回收' not in content:
+                            content['伏笔回收'] = "无"
+                    else:
                         # 检查是否有相似的字段
                         similar_fields = [k for k in content.keys() if field in k or k in field]
                         if similar_fields:
                             # 使用相似字段
                             content[field] = content.pop(similar_fields[0])
                         else:
-                            raise ValueError(f"章节 {chapter} 缺少必要字段: {field}")
+                            # 如果没有找到相似字段，设置默认值
+                            if field == '标题':
+                                content['标题'] = "未命名章节"
+                            elif field == '核心事件':
+                                content['核心事件'] = "待定"
+                            elif field == '场景':
+                                content['场景'] = "待定"
+                            elif field == '人物行动':
+                                content['人物行动'] = "待定"
     
     def save_outline(self, outline: Dict[str, Any], 
                     output_path: str, 

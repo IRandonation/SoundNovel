@@ -18,6 +18,7 @@ sys.path.insert(0, str(project_root))
 from novel_generator.core.project_manager import ProjectManager
 from novel_generator.core.outline_generator import OutlineGenerator
 from novel_generator.config.settings import Settings, create_default_config
+from batch_outline_generator import BatchOutlineGenerator
 
 
 def setup_logging(log_file: str = "06_log/novel_generator.log"):
@@ -96,26 +97,36 @@ def load_style_guide(project_root: Path) -> Dict[str, Any]:
         return {}
 
 
-def generate_outline(config: Dict[str, Any], 
+def generate_outline(config: Dict[str, Any],
                     core_setting: Dict[str, Any],
                     overall_outline: Dict[str, Any]) -> bool:
     """生成章节大纲"""
     try:
         print("\n📝 开始生成章节大纲...")
         
-        # 创建大纲生成器
-        outline_generator = OutlineGenerator(config)
+        # 创建批量大纲生成器
+        batch_generator = BatchOutlineGenerator(config)
         
-        # 生成大纲
-        outline = outline_generator.generate_outline(
+        # 创建大纲生成器用于提取章节数量
+        outline_gen = OutlineGenerator(config)
+        
+        # 自动提取总章节数量
+        total_chapters = outline_gen.extract_total_chapters(overall_outline)
+        
+        # 批量生成大纲（不指定total_chapters，让系统自动检测）
+        outline = batch_generator.generate_batch_outline(
             core_setting=core_setting,
             overall_outline=overall_outline,
-            chapter_range=(1, 20)  # 生成前10章大纲
+            total_chapters=total_chapters,  # 使用自动检测的章节数量
+            batch_size=30       # 每批30章
         )
         
+        # 动态生成输出文件名
+        outline_filename = f"chapter_outline_01-{total_chapters}.yaml"
+        outline_path = project_root / "02_outline" / outline_filename
+        
         # 保存大纲
-        outline_path = project_root / "02_outline" / "chapter_outline_01-10.yaml"
-        outline_generator.save_outline(outline, str(outline_path))
+        batch_generator.save_batch_outline(outline, str(outline_path))
         
         print(f"✅ 章节大纲生成成功: {outline_path}")
         return True
@@ -174,15 +185,47 @@ def main():
     
     # 显示整体大纲
     print(f"\n📊 整体大纲:")
-    print(f"   第一幕: {overall_outline.get('第一幕', '未设置')[:50]}...")
-    print(f"   第二幕: {overall_outline.get('第二幕', '未设置')[:50]}...")
-    print(f"   第三幕: {overall_outline.get('第三幕', '未设置')[:50]}...")
+    # 动态检测并显示所有幕
+    act_number = 1
+    found_acts = False
+    
+    # 中文数字映射
+    chinese_numbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+                      "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
+    
+    while True:
+        # 尝试数字格式（第1幕、第2幕等）
+        act_key_numeric = f"第{act_number}幕"
+        act_content = overall_outline.get(act_key_numeric, '')
+        
+        # 如果数字格式没有找到，尝试中文格式（第一幕、第二幕等）
+        if not act_content and act_number <= len(chinese_numbers):
+            act_key_chinese = f"第{chinese_numbers[act_number-1]}幕"
+            act_content = overall_outline.get(act_key_chinese, '')
+        
+        if act_content:
+            # 使用找到的键名作为显示名称
+            display_key = act_key_numeric if overall_outline.get(act_key_numeric) else act_key_chinese
+            print(f"   {display_key}: {act_content[:50]}...")
+            found_acts = True
+            act_number += 1
+        else:
+            break
+    
+    # 如果没有找到任何幕，显示提示信息
+    if not found_acts:
+        print("   未找到任何幕的剧情设定")
     
     # 生成章节大纲
     if generate_outline(config, core_setting, overall_outline):
         print("\n🎉 章节大纲生成完成！")
+        
+        # 获取自动检测的章节数量
+        outline_gen = OutlineGenerator(config)
+        total_chapters = outline_gen.extract_total_chapters(overall_outline)
+        
         print("\n📋 下一步操作:")
-        print("1. 查看 02_outline/chapter_outline_01-10.yaml 并优化大纲")
+        print(f"1. 查看 02_outline/chapter_outline_01-{total_chapters}.yaml 并优化大纲")
         print("2. 运行 python expand_chapters.py 开始生成章节内容")
     else:
         print("\n❌ 章节大纲生成失败，请检查错误信息")
