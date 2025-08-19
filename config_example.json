@@ -1,0 +1,63 @@
+{
+  "api_key": "请在此处填写智谱AI API密钥",
+  "api_base_url": "https://open.bigmodel.cn/api/paas/v4",
+  "models": {
+    "logic_analysis_model": "glm-4-long",
+    "major_chapters_model": "glm-4-long",
+    "sub_chapters_model": "glm-4-long",
+    "expansion_model": "glm-4.5-flash",
+    "default_model": "glm-4.5-flash"
+  },
+  "doubao_api_key": "请在此处填写豆包API密钥",
+  "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+  "doubao_models": {
+    "logic_analysis_model": "ep-20241210233657-lz8fv",
+    "major_chapters_model": "ep-20241210233657-lz8fv",
+    "sub_chapters_model": "ep-20241210233657-lz8fv",
+    "expansion_model": "ep-20241210233657-lz8fv",
+    "default_model": "ep-20241210233657-lz8fv"
+  },
+  "ark_api_key": "请在此处填写Ark API密钥或设置ARK_API_KEY环境变量",
+  "ark_models": {
+    "logic_analysis_model": "ep-20241210233657-lz8fv",
+    "major_chapters_model": "ep-20241210233657-lz8fv",
+    "sub_chapters_model": "ep-20241210233657-lz8fv",
+    "expansion_model": "ep-20241210233657-lz8fv",
+    "default_model": "ep-20241210233657-lz8fv"
+  },
+  "default_model": "zhipu",
+  "available_models": ["zhipu", "doubao", "ark"],
+  "max_tokens": 4000,
+  "temperature": 0.7,
+  "top_p": 0.7,
+  "system": {
+    "api": {
+      "max_retries": 5,
+      "retry_delay": 2,
+      "timeout": 60
+    },
+    "logging": {
+      "level": "INFO",
+      "file": "06_log/novel_generator.log"
+    }
+  },
+  "paths": {
+    "core_setting": "01_source/core_setting.yaml",
+    "outline_dir": "02_outline/",
+    "draft_dir": "03_draft/",
+    "prompt_dir": "04_prompt/",
+    "log_dir": "06_log/"
+  },
+  "novel_generation": {
+    "stage1_use_long_model": true,
+    "stage2_use_long_model": true,
+    "stage3_use_regular_model": true,
+    "stage4_use_regular_model": true,
+    "stage5_use_regular_model": true,
+    "sub_chapter_range": [15, 55],
+    "context_chapters": 5,
+    "default_word_count": 1500,
+    "copyright_bypass": true,
+    "world_style": ""
+  }
+}

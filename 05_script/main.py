@@ -19,6 +19,7 @@ from novel_generator.core.project_manager import ProjectManager
 from novel_generator.core.outline_generator import OutlineGenerator
 from novel_generator.config.settings import Settings, create_default_config
 from novel_generator.core.batch_outline_generator import BatchOutlineGenerator
+from novel_generator.utils.multi_model_client import MultiModelClient
 
 
 def setup_logging(log_file: str = "06_log/novel_generator.log"):

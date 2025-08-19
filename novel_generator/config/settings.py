@@ -6,7 +6,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -14,6 +14,7 @@ from datetime import datetime
 @dataclass
 class APIConfig:
     """API配置类"""
+    # 智谱AI配置
     api_key: str = ""
     api_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     models: Dict[str, str] = field(default_factory=lambda: {
@@ -23,6 +24,33 @@ class APIConfig:
         "expansion_model": "glm-4.5-flash",
         "default_model": "glm-4.5-flash"
     })
+    
+    # 豆包配置
+    doubao_api_key: str = ""
+    doubao_api_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    doubao_models: Dict[str, str] = field(default_factory=lambda: {
+        "logic_analysis_model": "ep-20241210233657-lz8fv",
+        "major_chapters_model": "ep-20241210233657-lz8fv",
+        "sub_chapters_model": "ep-20241210233657-lz8fv",
+        "expansion_model": "ep-20241210233657-lz8fv",
+        "default_model": "ep-20241210233657-lz8fv"
+    })
+    
+    # 火山引擎Ark配置
+    ark_api_key: str = ""
+    ark_models: Dict[str, str] = field(default_factory=lambda: {
+        "logic_analysis_model": "ep-20241210233657-lz8fv",
+        "major_chapters_model": "ep-20241210233657-lz8fv",
+        "sub_chapters_model": "ep-20241210233657-lz8fv",
+        "expansion_model": "ep-20241210233657-lz8fv",
+        "default_model": "ep-20241210233657-lz8fv"
+    })
+    
+    # 多模型配置
+    default_model: str = "zhipu"  # 默认使用智谱AI
+    available_models: List[str] = field(default_factory=lambda: ["zhipu", "doubao", "ark"])
+    
+    # 通用配置
     max_tokens: int = 4000
     temperature: float = 0.7
     top_p: float = 0.7
@@ -64,7 +92,7 @@ class GenerationConfig:
     stage4_use_regular_model: bool = True
     stage5_use_regular_model: bool = True
     sub_chapter_range: list = field(default_factory=lambda: [15, 55])
-    context_chapters: int = 5
+    context_chapters: int = 10
     default_word_count: int = 1500
     copyright_bypass: bool = True
     world_style: str = ""
@@ -90,13 +118,35 @@ class Settings:
     
     def load_from_dict(self, config_dict: Dict[str, Any]):
         """从字典加载配置"""
-        # 加载API配置
+        # 加载智谱AI配置
         if "api_key" in config_dict:
             self.api_config.api_key = config_dict["api_key"]
         if "api_base_url" in config_dict:
             self.api_config.api_base_url = config_dict["api_base_url"]
         if "models" in config_dict:
             self.api_config.models.update(config_dict["models"])
+        
+        # 加载豆包配置
+        if "doubao_api_key" in config_dict:
+            self.api_config.doubao_api_key = config_dict["doubao_api_key"]
+        if "doubao_api_base_url" in config_dict:
+            self.api_config.doubao_api_base_url = config_dict["doubao_api_base_url"]
+        if "doubao_models" in config_dict:
+            self.api_config.doubao_models.update(config_dict["doubao_models"])
+        
+        # 加载Ark配置
+        if "ark_api_key" in config_dict:
+            self.api_config.ark_api_key = config_dict["ark_api_key"]
+        if "ark_models" in config_dict:
+            self.api_config.ark_models.update(config_dict["ark_models"])
+        
+        # 加载多模型配置
+        if "default_model" in config_dict:
+            self.api_config.default_model = config_dict["default_model"]
+        if "available_models" in config_dict:
+            self.api_config.available_models = config_dict["available_models"]
+        
+        # 加载通用配置
         if "max_tokens" in config_dict:
             self.api_config.max_tokens = config_dict["max_tokens"]
         if "temperature" in config_dict:
@@ -189,9 +239,25 @@ class Settings:
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
+            # 智谱AI配置
             "api_key": self.api_config.api_key,
             "api_base_url": self.api_config.api_base_url,
             "models": self.api_config.models,
+            
+            # 豆包配置
+            "doubao_api_key": self.api_config.doubao_api_key,
+            "doubao_api_base_url": self.api_config.doubao_api_base_url,
+            "doubao_models": self.api_config.doubao_models,
+            
+            # Ark配置
+            "ark_api_key": self.api_config.ark_api_key,
+            "ark_models": self.api_config.ark_models,
+            
+            # 多模型配置
+            "default_model": self.api_config.default_model,
+            "available_models": self.api_config.available_models,
+            
+            # 通用配置
             "max_tokens": self.api_config.max_tokens,
             "temperature": self.api_config.temperature,
             "top_p": self.api_config.top_p,
@@ -301,6 +367,7 @@ class Settings:
 def create_default_config() -> Dict[str, Any]:
     """创建默认配置"""
     return {
+        # 智谱AI配置
         "api_key": "请在此处填写智谱API密钥",
         "api_base_url": "https://open.bigmodel.cn/api/paas/v4",
         "models": {
@@ -310,6 +377,33 @@ def create_default_config() -> Dict[str, Any]:
             "expansion_model": "glm-4.5-flash",
             "default_model": "glm-4.5-flash"
         },
+        
+        # 豆包配置
+        "doubao_api_key": "请在此处填写豆包API密钥",
+        "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "doubao_models": {
+            "logic_analysis_model": "ep-20241210233657-lz8fv",
+            "major_chapters_model": "ep-20241210233657-lz8fv",
+            "sub_chapters_model": "ep-20241210233657-lz8fv",
+            "expansion_model": "ep-20241210233657-lz8fv",
+            "default_model": "ep-20241210233657-lz8fv"
+        },
+        
+        # Ark配置
+        "ark_api_key": "请在此处填写Ark API密钥或设置ARK_API_KEY环境变量",
+        "ark_models": {
+            "logic_analysis_model": "ep-20241210233657-lz8fv",
+            "major_chapters_model": "ep-20241210233657-lz8fv",
+            "sub_chapters_model": "ep-20241210233657-lz8fv",
+            "expansion_model": "ep-20241210233657-lz8fv",
+            "default_model": "ep-20241210233657-lz8fv"
+        },
+        
+        # 多模型配置
+        "default_model": "zhipu",
+        "available_models": ["zhipu", "doubao", "ark"],
+        
+        # 通用配置
         "max_tokens": 4000,
         "temperature": 0.7,
         "top_p": 0.7,

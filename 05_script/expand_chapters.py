@@ -18,6 +18,7 @@ sys.path.insert(0, str(project_root))
 from novel_generator.core.chapter_expander import ChapterExpander
 from novel_generator.core.sliding_window import ContextManager
 from novel_generator.config.settings import Settings, create_default_config
+from novel_generator.utils.multi_model_client import MultiModelClient
 
 
 def setup_logging(log_file: str = "06_log/novel_generator.log"):
@@ -77,6 +78,27 @@ def load_style_guide(project_root: Path) -> Dict[str, Any]:
         return {}
 
 
+def initialize_multi_model_client(config: Dict[str, Any]) -> MultiModelClient:
+    """
+    初始化多模型客户端
+    
+    Args:
+        config: 配置信息
+        
+    Returns:
+        MultiModelClient: 多模型客户端实例
+    """
+    try:
+        client = MultiModelClient(config)
+        print(f"✅ 多模型客户端初始化成功")
+        print(f"   当前使用模型: {client.get_current_model()}")
+        print(f"   可用模型: {client.get_available_models()}")
+        return client
+    except Exception as e:
+        print(f"❌ 多模型客户端初始化失败: {e}")
+        return None
+
+
 def get_chapter_range_from_outline(outline_file: str) -> Tuple[int, int]:
     """
     从大纲文件获取章节范围
@@ -111,8 +133,9 @@ def get_chapter_range_from_outline(outline_file: str) -> Tuple[int, int]:
         return 1, 10  # 默认范围
 
 
-def expand_single_chapter(chapter_num: int, config: Dict[str, Any], 
-                         outline_file: str, style_guide: Dict[str, Any]) -> bool:
+def expand_single_chapter(chapter_num: int, config: Dict[str, Any],
+                         outline_file: str, style_guide: Dict[str, Any],
+                         multi_model_client: MultiModelClient = None) -> bool:
     """
     扩写单个章节
     
@@ -121,6 +144,7 @@ def expand_single_chapter(chapter_num: int, config: Dict[str, Any],
         config: 配置信息
         outline_file: 大纲文件路径
         style_guide: 风格指导
+        multi_model_client: 多模型客户端
         
     Returns:
         bool: 是否成功
@@ -141,6 +165,11 @@ def expand_single_chapter(chapter_num: int, config: Dict[str, Any],
         
         # 创建章节扩写器
         expander = ChapterExpander(config)
+        
+        # 如果有多模型客户端，设置多模型功能
+        if multi_model_client:
+            expander.multi_model_client = multi_model_client
+            print(f"   使用模型: {multi_model_client.get_current_model()}")
         
         # 准备上下文
         context_manager = ContextManager(config)
@@ -174,9 +203,10 @@ def expand_single_chapter(chapter_num: int, config: Dict[str, Any],
 
 
 def expand_multiple_chapters(start_chapter: int, end_chapter: int,
-                            config: Dict[str, Any], 
+                            config: Dict[str, Any],
                             outline_file: str,
-                            style_guide: Dict[str, Any]) -> bool:
+                            style_guide: Dict[str, Any],
+                            multi_model_client: MultiModelClient = None) -> bool:
     """
     批量扩写章节
     
@@ -186,6 +216,7 @@ def expand_multiple_chapters(start_chapter: int, end_chapter: int,
         config: 配置信息
         outline_file: 大纲文件路径
         style_guide: 风格指导
+        multi_model_client: 多模型客户端
         
     Returns:
         bool: 是否全部成功
@@ -195,6 +226,11 @@ def expand_multiple_chapters(start_chapter: int, end_chapter: int,
         
         # 创建章节扩写器
         expander = ChapterExpander(config)
+        
+        # 如果有多模型客户端，设置多模型功能
+        if multi_model_client:
+            expander.multi_model_client = multi_model_client
+            print(f"   使用模型: {multi_model_client.get_current_model()}")
         
         # 扩写章节
         success = expander.expand_multiple_chapters(
@@ -258,11 +294,40 @@ def main():
         print(f"❌ 解析章节范围失败: {e}")
         start_chapter, end_chapter = 1, 10
     
-    # 显示配置信息
-    print(f"\n📋 扩写配置:")
-    print(f"   上下文章节数: {settings.get_context_chapters()}")
-    print(f"   默认字数: {settings.get_default_word_count()}")
-    print(f"   使用模型: {settings.get_api_model('stage4')}")
+    # 初始化多模型客户端
+    multi_model_client = initialize_multi_model_client(config)
+    if not multi_model_client:
+        print("❌ 多模型客户端初始化失败，使用传统方式")
+        # 使用传统方式
+        print(f"\n📋 扩写配置:")
+        print(f"   上下文章节数: {settings.get_context_chapters()}")
+        print(f"   默认字数: {settings.get_default_word_count()}")
+        print(f"   使用模型: {settings.get_api_model('stage4')}")
+    else:
+        # 显示配置信息
+        print(f"\n📋 扩写配置:")
+        print(f"   上下文章节数: {settings.get_context_chapters()}")
+        print(f"   默认字数: {settings.get_default_word_count()}")
+        print(f"   当前使用模型: {multi_model_client.get_current_model()}")
+        
+        # 询问是否切换模型
+        print(f"\n🔄 模型选择:")
+        available_models = multi_model_client.get_available_models()
+        for i, model_type in enumerate(available_models, 1):
+            print(f"{i}. {model_type}")
+        
+        try:
+            model_choice = input(f"请选择模型 (1-{len(available_models)}, 直接回车使用当前模型): ").strip()
+            if model_choice:
+                model_index = int(model_choice) - 1
+                if 0 <= model_index < len(available_models):
+                    selected_model = available_models[model_index]
+                    if multi_model_client.switch_model(selected_model):
+                        print(f"✅ 已切换到 {selected_model} 模型")
+                    else:
+                        print(f"❌ 切换到 {selected_model} 模型失败")
+        except (ValueError, KeyboardInterrupt):
+            print("   使用当前模型")
     
     # 显示风格指导
     if style_guide:
@@ -282,7 +347,7 @@ def main():
         if choice == "1":
             # 单章节扩写
             chapter_num = int(input("请输入要扩写的章节号: ").strip())
-            success = expand_single_chapter(chapter_num, config, str(outline_file), style_guide)
+            success = expand_single_chapter(chapter_num, config, str(outline_file), style_guide, multi_model_client)
             
             if success:
                 print(f"\n✅ 第{chapter_num}章扩写完成！")
@@ -291,7 +356,7 @@ def main():
         elif choice == "2":
             # 批量扩写所有章节
             success = expand_multiple_chapters(start_chapter, end_chapter, 
-                                             config, str(outline_file), style_guide)
+                                             config, str(outline_file), style_guide, multi_model_client)
             
             if success:
                 print(f"\n✅ 所有章节扩写完成！")
@@ -307,7 +372,7 @@ def main():
                 return
             
             success = expand_multiple_chapters(custom_start, custom_end,
-                                             config, str(outline_file), style_guide)
+                                             config, str(outline_file), style_guide, multi_model_client)
             
             if success:
                 print(f"\n✅ 指定范围章节扩写完成！")
@@ -342,7 +407,10 @@ if __name__ == "__main__":
         style_guide = load_style_guide(Path(args.config).parent.parent)
         outline_file = Path(args.config).parent.parent / "02_outline" / "chapter_outline_01-10.yaml"
         
-        success = expand_single_chapter(args.chapter, config, str(outline_file), style_guide)
+        # 初始化多模型客户端
+        multi_model_client = initialize_multi_model_client(config)
+        
+        success = expand_single_chapter(args.chapter, config, str(outline_file), style_guide, multi_model_client)
         print(f"{'✅' if success else '❌'} 第{args.chapter}章扩写{'成功' if success else '失败'}")
     
     elif args.start and args.end:
@@ -354,7 +422,10 @@ if __name__ == "__main__":
         style_guide = load_style_guide(Path(args.config).parent.parent)
         outline_file = Path(args.config).parent.parent / "02_outline" / "chapter_outline_01-10.yaml"
         
-        success = expand_multiple_chapters(args.start, args.end, config, str(outline_file), style_guide)
+        # 初始化多模型客户端
+        multi_model_client = initialize_multi_model_client(config)
+        
+        success = expand_multiple_chapters(args.start, args.end, config, str(outline_file), style_guide, multi_model_client)
         print(f"{'✅' if success else '❌'} 章节扩写{'成功' if success else '部分成功'}")
     
     else:
