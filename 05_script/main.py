@@ -18,7 +18,7 @@ sys.path.insert(0, str(project_root))
 from novel_generator.core.project_manager import ProjectManager
 from novel_generator.core.outline_generator import OutlineGenerator
 from novel_generator.config.settings import Settings, create_default_config
-from batch_outline_generator import BatchOutlineGenerator
+from novel_generator.core.batch_outline_generator import BatchOutlineGenerator
 
 
 def setup_logging(log_file: str = "06_log/novel_generator.log"):
@@ -118,7 +118,7 @@ def generate_outline(config: Dict[str, Any],
             core_setting=core_setting,
             overall_outline=overall_outline,
             total_chapters=total_chapters,  # 使用自动检测的章节数量
-            batch_size=30       # 每批30章
+            batch_size=15       # 每批15章
         )
         
         # 动态生成输出文件名

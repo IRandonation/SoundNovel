@@ -29,7 +29,7 @@ class BatchOutlineGenerator:
         self.outline_generator = OutlineGenerator(config)
     
     def generate_batch_outline(self, core_setting, overall_outline,
-                              total_chapters=None, batch_size=30):
+                              total_chapters=None, batch_size=15):
         """
         分批生成章节大纲
         
@@ -87,51 +87,3 @@ class BatchOutlineGenerator:
             str: 实际保存路径
         """
         return self.outline_generator.save_outline(outline, output_path, backup)
-
-def test_batch_generation():
-    """测试批量生成功能"""
-    print("🧪 测试批量大纲生成功能...")
-    
-    # 模拟配置
-    config = {
-        "api_key": "test_key",
-        "model": "test_model",
-        "timeout": 30
-    }
-    
-    # 模拟核心设定和整体大纲
-    core_setting = {
-        "世界观": "这是一个灵气充沛的修仙世界",
-        "核心冲突": "主线矛盾围绕凛风与曦羽之间的情感纠葛",
-        "人物小传": {
-            "凛风": {"性格": "刚猛", "功法": "剑法"},
-            "曦羽": {"性格": "柔和", "功法": "太极"}
-        }
-    }
-    
-    overall_outline = {
-        "第一幕": "第1-15章，介绍凛风的童年生活",
-        "第二幕": "第16-30章，凛风与曦羽相遇",
-        "第三幕": "第31-45章，两人情感升温",
-        "关键转折点": "- 第25章：重要转折"
-    }
-    
-    # 创建批量生成器
-    batch_generator = BatchOutlineGenerator(config)
-    
-    # 测试批量生成（使用较小的参数进行测试）
-    outline = batch_generator.generate_batch_outline(
-        core_setting=core_setting,
-        overall_outline=overall_outline,
-        total_chapters=60,  # 测试60章
-        batch_size=15       # 每批15章
-    )
-    
-    # 保存大纲
-    output_path = "test_batch_outline.yaml"
-    batch_generator.save_batch_outline(outline, output_path, backup=False)
-    
-    print(f"✅ 测试完成，大纲已保存到: {output_path}")
-
-if __name__ == "__main__":
-    test_batch_generation()

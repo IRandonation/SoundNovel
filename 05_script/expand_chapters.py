@@ -49,7 +49,7 @@ def validate_project_structure(project_root: Path) -> bool:
     required_files = [
         "01_source/core_setting.yaml",
         "01_source/overall_outline.yaml",
-        "02_outline/chapter_outline_01-10.yaml",
+        "02_outline/chapter_outline_01-58.yaml",
         "04_prompt/chapter_expand_prompt.yaml",
         "04_prompt/style_guide.yaml"
     ]
@@ -245,7 +245,7 @@ def main():
     style_guide = load_style_guide(project_root)
     
     # 获取大纲文件
-    outline_file = project_root / "02_outline" / "chapter_outline_01-10.yaml"
+    outline_file = project_root / "02_outline" / "chapter_outline_01-58.yaml"
     if not outline_file.exists():
         print("❌ 章节大纲文件不存在，请先生成大纲")
         return
