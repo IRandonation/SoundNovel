@@ -5,6 +5,8 @@ API客户端
 
 import json
 import time
+import random
+import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import requests
@@ -38,6 +40,17 @@ class ZhipuAIClient:
         self.retry_delay = config.get('system', {}).get('api', {}).get('retry_delay', 2)
         self.timeout = config.get('system', {}).get('api', {}).get('timeout', 60)
         
+        # 限流和熔断配置
+        self.rate_limit_delay = 1.0  # 请求间隔（秒）
+        self.last_request_time = 0
+        self.circuit_breaker_threshold = 5  # 连续失败次数阈值
+        self.consecutive_failures = 0
+        self.circuit_breaker_timeout = 60  # 熔断器超时时间（秒）
+        self.circuit_breaker_until = 0
+        
+        # 日志
+        self.logger = logging.getLogger(__name__)
+        
         # 会话
         self.session = requests.Session()
         self.session.headers.update({
@@ -45,7 +58,44 @@ class ZhipuAIClient:
             'Content-Type': 'application/json'
         })
         
-    def _make_request(self, model: str, messages: List[Dict[str, str]], 
+    def _check_circuit_breaker(self) -> bool:
+        """检查熔断器状态"""
+        now = time.time()
+        if now < self.circuit_breaker_until:
+            self.logger.warning(f"熔断器激活中，还需等待 {self.circuit_breaker_until - now:.1f} 秒")
+            return False
+        
+        # 重置熔断器
+        if self.consecutive_failures >= self.circuit_breaker_threshold:
+            self.logger.info("熔断器重置")
+            self.consecutive_failures = 0
+        
+        return True
+    
+    def _update_circuit_breaker(self, success: bool):
+        """更新熔断器状态"""
+        if success:
+            self.consecutive_failures = 0
+            self.circuit_breaker_until = 0
+        else:
+            self.consecutive_failures += 1
+            if self.consecutive_failures >= self.circuit_breaker_threshold:
+                self.circuit_breaker_until = time.time() + self.circuit_breaker_timeout
+                self.logger.warning(f"熔断器激活，将在 {self.circuit_breaker_timeout} 秒后重置")
+    
+    def _apply_rate_limit(self):
+        """应用限流"""
+        now = time.time()
+        time_since_last_request = now - self.last_request_time
+        
+        if time_since_last_request < self.rate_limit_delay:
+            sleep_time = self.rate_limit_delay - time_since_last_request
+            self.logger.debug(f"限流中，等待 {sleep_time:.2f} 秒")
+            time.sleep(sleep_time)
+        
+        self.last_request_time = time.time()
+    
+    def _make_request(self, model: str, messages: List[Dict[str, str]],
                      **kwargs) -> Dict[str, Any]:
         """
         发送API请求
@@ -58,6 +108,10 @@ class ZhipuAIClient:
         Returns:
             Dict[str, Any]: API响应
         """
+        # 检查熔断器
+        if not self._check_circuit_breaker():
+            raise Exception("API服务暂时不可用，请稍后再试")
+        
         url = f"{self.api_base_url}/chat/completions"
         
         # 构建请求参数
@@ -79,23 +133,67 @@ class ZhipuAIClient:
         # 重试机制
         for attempt in range(self.max_retries):
             try:
+                # 应用限流
+                self._apply_rate_limit()
+                
+                self.logger.info(f"发送API请求 (尝试 {attempt + 1}/{self.max_retries})")
                 response = self.session.post(
-                    url, 
-                    json=request_data, 
+                    url,
+                    json=request_data,
                     timeout=self.timeout
                 )
+                
+                # 检查响应状态
+                if response.status_code == 429:
+                    # 请求过于频繁
+                    retry_after = int(response.headers.get('Retry-After', self.retry_delay * (2 ** attempt)))
+                    self.logger.warning(f"请求过于频繁，等待 {retry_after} 秒后重试")
+                    time.sleep(retry_after)
+                    continue
+                
                 response.raise_for_status()
                 
-                return response.json()
+                # 成功请求，更新熔断器状态
+                self._update_circuit_breaker(True)
+                
+                result = response.json()
+                self.logger.info("API请求成功")
+                return result
+                
+            except requests.exceptions.Timeout as e:
+                self.logger.warning(f"API请求超时: {e}")
+                if attempt == self.max_retries - 1:
+                    self._update_circuit_breaker(False)
+                    raise Exception(f"API请求超时: {e}")
+                
+            except requests.exceptions.ConnectionError as e:
+                self.logger.warning(f"API连接错误: {e}")
+                if attempt == self.max_retries - 1:
+                    self._update_circuit_breaker(False)
+                    raise Exception(f"API连接错误: {e}")
+                
+            except requests.exceptions.HTTPError as e:
+                self.logger.warning(f"API HTTP错误: {e}")
+                if attempt == self.max_retries - 1:
+                    self._update_circuit_breaker(False)
+                    raise Exception(f"API HTTP错误: {e}")
                 
             except requests.exceptions.RequestException as e:
+                self.logger.warning(f"API请求异常: {e}")
                 if attempt == self.max_retries - 1:
+                    self._update_circuit_breaker(False)
                     raise Exception(f"API请求失败: {e}")
-                
-                wait_time = self.retry_delay * (2 ** attempt)
-                print(f"API请求失败，{wait_time}秒后重试... (尝试 {attempt + 1}/{self.max_retries})")
-                time.sleep(wait_time)
+            
+            # 计算等待时间（指数退避 + 随机抖动）
+            base_wait = self.retry_delay * (2 ** attempt)
+            jitter = random.uniform(0.5, 1.5)  # 随机抖动因子
+            wait_time = base_wait * jitter
+            
+            self.logger.warning(f"API请求失败，{wait_time:.1f}秒后重试... (尝试 {attempt + 1}/{self.max_retries})")
+            time.sleep(wait_time)
         
+        # 如果所有重试都失败，更新熔断器状态
+        self._update_circuit_breaker(False)
         return {}
     
     def chat_completion(self, model: str, messages: List[Dict[str, str]], 
