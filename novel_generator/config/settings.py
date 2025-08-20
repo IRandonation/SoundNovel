@@ -91,7 +91,6 @@ class GenerationConfig:
     stage3_use_regular_model: bool = True
     stage4_use_regular_model: bool = True
     stage5_use_regular_model: bool = True
-    sub_chapter_range: list = field(default_factory=lambda: [15, 55])
     context_chapters: int = 10
     default_word_count: int = 1500
     copyright_bypass: bool = True
@@ -197,8 +196,6 @@ class Settings:
                 self.generation_config.stage4_use_regular_model = gen_config["stage4_use_regular_model"]
             if "stage5_use_regular_model" in gen_config:
                 self.generation_config.stage5_use_regular_model = gen_config["stage5_use_regular_model"]
-            if "sub_chapter_range" in gen_config:
-                self.generation_config.sub_chapter_range = gen_config["sub_chapter_range"]
             if "context_chapters" in gen_config:
                 self.generation_config.context_chapters = gen_config["context_chapters"]
             if "default_word_count" in gen_config:
@@ -285,7 +282,6 @@ class Settings:
                 "stage3_use_regular_model": self.generation_config.stage3_use_regular_model,
                 "stage4_use_regular_model": self.generation_config.stage4_use_regular_model,
                 "stage5_use_regular_model": self.generation_config.stage5_use_regular_model,
-                "sub_chapter_range": self.generation_config.sub_chapter_range,
                 "context_chapters": self.generation_config.context_chapters,
                 "default_word_count": self.generation_config.default_word_count,
                 "copyright_bypass": self.generation_config.copyright_bypass,
@@ -305,10 +301,6 @@ class Settings:
         # 验证路径配置
         if not self.path_config.core_setting_file:
             raise Exception("核心设定文件路径未配置")
-        
-        # 验证生成配置
-        if not self.generation_config.sub_chapter_range:
-            raise Exception("子章节范围未配置")
         
         return True
     
@@ -431,7 +423,6 @@ def create_default_config() -> Dict[str, Any]:
             "stage3_use_regular_model": True,
             "stage4_use_regular_model": True,
             "stage5_use_regular_model": True,
-            "sub_chapter_range": [15, 55],
             "context_chapters": 5,
             "default_word_count": 1500,
             "copyright_bypass": True,

@@ -12,23 +12,31 @@ import logging
 
 from novel_generator.config.settings import Settings
 from novel_generator.utils.api_client import ZhipuAIClient
+from novel_generator.utils.multi_model_client import MultiModelClient
 
 
 class ChapterExpander:
     """章节扩写器类"""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], multi_model_client: MultiModelClient = None):
         """
         初始化章节扩写器
         
         Args:
             config: 配置信息
+            multi_model_client: 多模型客户端，如果提供则使用多模型功能
         """
         self.config = config
         self.settings = Settings(config)
         self.logger = logging.getLogger(__name__)
+        
         # 初始化AI API客户端
-        self.api_client = ZhipuAIClient(config)
+        if multi_model_client:
+            self.multi_model_client = multi_model_client
+            self.use_multi_model = True
+        else:
+            self.api_client = ZhipuAIClient(config)
+            self.use_multi_model = False
         
     def expand_chapter(self, chapter_num: int, 
                       chapter_outline: Dict[str, Any],
@@ -162,14 +170,20 @@ class ChapterExpander:
         try:
             self.logger.info("正在调用AI API生成章节内容...")
             
-            # 使用API客户端调用AI
-            response = self.api_client.expand_chapter(prompt)
+            if self.use_multi_model:
+                # 使用多模型客户端
+                response = self.multi_model_client.expand_chapter(prompt)
+                model_type = self.multi_model_client.get_current_model()
+                self.logger.info(f"多模型API调用成功，使用模型: {model_type}")
+            else:
+                # 使用传统API客户端
+                response = self.api_client.expand_chapter(prompt)
+                self.logger.info("传统API调用成功")
             
             if not response:
                 self.logger.warning("AI API返回空响应，使用模拟数据")
                 return self._get_mock_response()
             
-            self.logger.info("AI API调用成功")
             return response
             
         except Exception as e:

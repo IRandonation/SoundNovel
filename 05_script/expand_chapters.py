@@ -164,11 +164,10 @@ def expand_single_chapter(chapter_num: int, config: Dict[str, Any],
         chapter_outline = outline[chapter_key]
         
         # 创建章节扩写器
-        expander = ChapterExpander(config)
+        expander = ChapterExpander(config, multi_model_client)
         
-        # 如果有多模型客户端，设置多模型功能
+        # 显示使用的模型
         if multi_model_client:
-            expander.multi_model_client = multi_model_client
             print(f"   使用模型: {multi_model_client.get_current_model()}")
         
         # 准备上下文
@@ -225,11 +224,10 @@ def expand_multiple_chapters(start_chapter: int, end_chapter: int,
         print(f"\n🚀 开始批量扩写章节 {start_chapter}-{end_chapter}...")
         
         # 创建章节扩写器
-        expander = ChapterExpander(config)
+        expander = ChapterExpander(config, multi_model_client)
         
-        # 如果有多模型客户端，设置多模型功能
+        # 显示使用的模型
         if multi_model_client:
-            expander.multi_model_client = multi_model_client
             print(f"   使用模型: {multi_model_client.get_current_model()}")
         
         # 扩写章节
