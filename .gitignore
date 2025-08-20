@@ -121,7 +121,8 @@ dmypy.json
 
 # 项目特定文件
 # 输出文件
-output/
+03_draft/*.md
+02_outline/*.yaml
 # 日志文件
 logs/
 # 失败文件

@@ -2,53 +2,93 @@
 
 ## 📖 项目简介
 
-小说创作AI Agent是一个基于智谱AI大语言模型的自动化小说创作辅助工具。它采用"大纲锚定+滑动窗口扩写+人工校验"的工作流程，帮助用户从原始素材生成完整的签约级小说内容。
+小说创作AI Agent是一个基于多种AI大语言模型的自动化小说创作辅助工具。它采用"大纲锚定+滑动窗口扩写+人工校验"的工作流程，帮助用户从原始素材生成完整的签约级小说内容。
+
+**支持的AI模型：**
+- 智谱AI
+- 豆包
+
+**核心优势：**
+- 智能大纲生成和批量处理
+- 滑动窗口技术确保故事连贯性
+- 多模型支持，可根据任务需求灵活选择
+- 完善的版本管理和日志系统
 
 ### 🎯 核心特性
 
 - **智能大纲生成**：基于核心设定自动生成章节大纲
 - **滑动窗口扩写**：确保故事连贯性和人物一致性
 - **多阶段创作流程**：从设定到草稿的完整创作链路
+- **多模型AI支持**：支持智谱AI、豆包、Ark等多种AI模型
 - **灵活的配置系统**：支持多种模型和参数调整
 - **完善的日志记录**：追踪创作过程和API调用记录
+- **批量处理能力**：支持大规模章节的批量生成和扩写
 
 ## 🏗️ 项目结构
+
+### 核心模块说明
+
+**novel_generator/** 是项目的核心代码模块，包含以下主要组件：
+
+- **core/**: 核心功能模块
+  - [`chapter_expander.py`](novel_generator/core/chapter_expander.py:1) - 章节扩写器，实现基于滑动窗口的章节内容生成
+  - [`outline_generator.py`](novel_generator/core/outline_generator.py:1) - 大纲生成器，负责章节大纲的生成
+  - [`batch_outline_generator.py`](novel_generator/core/batch_outline_generator.py:1) - 批量大纲生成器，支持大规模章节处理
+  - [`project_manager.py`](novel_generator/core/project_manager.py:1) - 项目管理器，负责项目初始化和结构管理
+  - [`sliding_window.py`](novel_generator/core/sliding_window.py:1) - 滑动窗口模块，确保故事连贯性
+
+- **config/**: 配置管理
+  - [`settings.py`](novel_generator/config/settings.py:1) - 设置管理器，处理所有配置相关的逻辑
+
+- **utils/**: 工具模块
+  - [`api_client.py`](novel_generator/utils/api_client.py:1) - API客户端，处理与AI模型的通信
+  - [`file_handler.py`](novel_generator/utils/file_handler.py:1) - 文件处理器，负责文件读写操作
+  - [`logger.py`](novel_generator/utils/logger.py:1) - 日志管理器，记录系统运行状态
+  - [`multi_model_client.py`](novel_generator/utils/multi_model_client.py:1) - 多模型客户端，支持多种AI模型的切换和管理
+
+### 目录结构
 
 ```
 SoundNovel/
 ├── novel_generator/           # 核心代码模块
 │   ├── core/                  # 核心功能模块
-│   │   ├── chapter_expander.py # 章节扩写器
-│   │   ├── outline_generator.py # 大纲生成器
+│   │   ├── chapter_expander.py    # 章节扩写器
+│   │   ├── outline_generator.py   # 大纲生成器
 │   │   ├── batch_outline_generator.py # 批量大纲生成器
-│   │   ├── project_manager.py  # 项目管理器
-│   │   └── sliding_window.py   # 滑动窗口模块
+│   │   ├── project_manager.py     # 项目管理器
+│   │   └── sliding_window.py      # 滑动窗口模块
 │   ├── config/                # 配置管理
 │   │   └── settings.py        # 设置管理器
+│   ├── templates/              # 模板文件
 │   └── utils/                 # 工具模块
 │       ├── api_client.py      # API客户端
 │       ├── file_handler.py    # 文件处理器
-│       └── logger.py          # 日志管理器
+│       ├── logger.py          # 日志管理器
+│       └── multi_model_client.py # 多模型客户端
 ├── 01_source/                 # 原始素材区
 │   ├── core_setting.yaml      # 核心设定文件
 │   └── overall_outline.yaml   # 整体大纲文件
 ├── 02_outline/                # 大纲细化区
-│   ├── chapter_outline_01-150.yaml # 章节大纲文件
+│   ├── chapter_outline_01-58.yaml # 章节大纲文件
 │   └── outline_history/       # 大纲历史版本
 ├── 03_draft/                  # 小说草稿区
 │   ├── chapter_01.md         # 章节草稿文件
 │   ├── chapter_02.md         # 章节草稿文件
-│   └── draft_history/        # 草稿历史版本
+│   ├── draft_history/        # 草稿历史版本
+│   └── merge_drafts.py       # 草稿合并脚本
 ├── 04_prompt/                 # Prompt模板库
 │   ├── chapter_expand_prompt.yaml # 扩写提示词模板
 │   └── style_guide.yaml      # 风格指导文件
 ├── 05_script/                 # 工具脚本区
 │   ├── main.py               # 主程序
 │   ├── expand_chapters.py    # 章节扩写脚本
-│   └── config.json           # 配置文件
+│   └── merge_drafts.py       # 草稿合并脚本
 ├── 06_log/                    # 日志区
 │   ├── ai_api_logs/          # API调用日志
 │   └── system_logs/         # 系统日志
+├── 07_output/                 # 最终输出区
+├── source/                    # 源文件区
+│   └── 越女剑.txt           # 示例源文件
 └── README.md                 # 项目说明文档
 ```
 
@@ -76,9 +116,15 @@ cd d:\Project\SoundNovel
 python 05_script/main.py --init
 ```
 
+初始化过程会：
+- 创建必要的目录结构
+- 生成默认配置文件 `05_script/config.json`
+- 创建核心设定和整体大纲的模板文件
+- 设置日志系统
+
 ### 3. 配置API密钥
 
-编辑 `05_script/config.json` 文件，添加您的智谱AI API密钥：
+编辑 `05_script/config.json` 文件，配置您的AI API密钥。系统支持多种AI模型：
 
 ```json
 {
@@ -91,6 +137,10 @@ python 05_script/main.py --init
     "expansion_model": "glm-4.5-flash",
     "default_model": "glm-4.5-flash"
   },
+  "doubao_api_key": "您的豆包API密钥（可选）",
+  "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+  "default_model": "zhipu",
+  "available_models": ["zhipu", "doubao"],
   "max_tokens": 4000,
   "temperature": 0.7,
   "top_p": 0.7,
@@ -118,7 +168,7 @@ python 05_script/main.py --init
     "stage3_use_regular_model": true,
     "stage4_use_regular_model": true,
     "stage5_use_regular_model": true,
-    "context_chapters": 5,
+    "context_chapters": 10,
     "default_word_count": 1500,
     "copyright_bypass": true,
     "world_style": ""
@@ -126,10 +176,15 @@ python 05_script/main.py --init
 }
 ```
 
+**多模型支持说明：**
+- **智谱AI**：默认使用，支持GLM-4-Long（复杂推理）和GLM-4.5-Flash（快速生成）
+- **豆包**：可选配置，支持ep-20241210233657-lz8fv模型
+
 ### 4. 填写核心设定
 
 编辑 `01_source/core_setting.yaml` 文件，填写您的小说核心设定：
 
+*例子*：
 ```yaml
 世界观: "这是一个灵气充沛的修仙世界..."
 核心冲突: "主线矛盾围绕凛风与曦羽之间的情感纠葛..."
@@ -154,6 +209,7 @@ python 05_script/main.py --init
 
 编辑 `01_source/overall_outline.yaml` 文件，制定故事的整体框架：
 
+*例子*：
 ```yaml
 第一幕: "第1-5章，介绍凛风的身世背景..."
 第二幕: "第6-15章，详细描述找灵犬过程中与曦羽的冲突..."
@@ -176,7 +232,7 @@ python 05_script/main.py
 程序会：
 1. 读取您的核心设定和整体大纲
 2. 自动从整体大纲中提取总章节数量
-3. 使用批量大纲生成器分批生成详细章节大纲（每批30章）
+3. 使用批量大纲生成器分批生成详细章节大纲（每批15章）
 4. 保存到 `02_outline/chapter_outline_01-{总章节数}.yaml`
 5. 输出生成结果供您审核
 
@@ -191,6 +247,7 @@ python 05_script/main.py
 
 查看生成的章节大纲文件，根据需要进行优化：
 
+*例子*：
 ```yaml
 第1章:
   标题: "开篇"
@@ -234,41 +291,35 @@ AI生成的章节草稿会保存在 `03_draft/` 目录下，格式为 Markdown�
 
 清晨的阳光洒进酒楼，凛风坐在靠窗的位置，悠闲地品着茶...
 
-## 主要功能特性
+## 📁 目录说明
 
-### 1. 批量大纲生成器
+### 07_output/ - 最终输出区
+用于存放最终生成的完整小说文件：
+- **novel_final.md** - 最终完成的小说全文
+- **novel_with_metadata.md** - 包含元数据的完整版本
+- **exported_files/** - 导出的其他格式文件
 
-新增批量大纲生成器，支持大规模小说创作：
+### source/ - 源文件区
+用于存放原始素材和参考文件：
+- **xxx.txt** - 示例源文件，可作为参考或素材
+- 可以添加其他参考文本、设定文档等
 
-- **自动章节数量提取**：从整体大纲中智能提取总章节数量
-- **分批处理机制**：大量章节自动分批生成，避免单次处理过多内容
-- **灵活的幕名称支持**：支持数字格式（第1幕、第2幕）和中文格式（第一幕、第二幕）
-- **错误恢复机制**：生成失败时自动使用模拟数据作为备用方案
+### merge_drafts.py - 草稿合并脚本
+位于 `03_draft/merge_drafts.py` 和 `05_script/merge_drafts.py`，用于将生成的章节草稿合并为完整小说：
 
-### 2. 滑动窗口技术
+```bash
+# 合并所有章节草稿
+python 05_script/merge_drafts.py
 
-系统采用滑动窗口技术确保故事连贯性：
+# 合并指定范围的章节
+python 05_script/merge_drafts.py --start 1 --end 10
+```
 
-- **上下文管理**：自动提取前序章节的关键信息
-- **人物状态追踪**：保持人物性格和行为的连续性
-- **伏笔回收**：智能识别和回收前期埋下的伏笔
-- **场景连贯性**：确保场景转换自然流畅
-
-### 3. 多模型支持
-
-支持多种智谱AI模型：
-
-- **GLM-4-Long**：用于逻辑分析和复杂推理
-- **GLM-4.5-Flash**：用于快速内容生成
-- **自定义模型**：可根据需要配置不同模型
-
-### 4. 智能提示词系统
-
-内置智能提示词生成系统：
-
-- **动态模板**：根据章节内容自动调整提示词
-- **风格适配**：支持多种写作风格和语言特点
-- **上下文融合**：将核心设定、风格指导等融入提示词
+合并功能：
+- 自动按章节顺序合并Markdown文件
+- 添加章节标题和分隔符
+- 生成完整的小说文档
+- 支持自定义输出格式
 
 ## ⚙️ 配置说明
 
@@ -276,12 +327,12 @@ AI生成的章节草稿会保存在 `03_draft/` 目录下，格式为 Markdown�
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `context_chapters` | 滑动窗口包含的前序章节数 | 5 |
+| `context_chapters` | 滑动窗口包含的前序章节数 | 10 |
 | `default_word_count` | 章节默认字数目标 | 1500 |
 | `expansion_model` | 章节扩写使用的模型 | "glm-4.5-flash" |
 | `temperature` | AI生成温度参数 | 0.7 |
 | `max_tokens` | 最大生成token数 | 4000 |
-| `batch_size` | 批量大纲生成每批章节数 | 30 |
+| `batch_size` | 批量大纲生成每批章节数 | 15 |
 
 ### API配置
 
@@ -330,7 +381,7 @@ AI生成的章节草稿会保存在 `03_draft/` 目录下，格式为 Markdown�
     "stage3_use_regular_model": true,
     "stage4_use_regular_model": true,
     "stage5_use_regular_model": true,
-    "context_chapters": 5,
+    "context_chapters": 10,
     "default_word_count": 1500,
     "copyright_bypass": true,
     "world_style": ""
@@ -365,9 +416,30 @@ python batch_outline_generator.py
 
 批量生成特点：
 - 自动检测总章节数量
-- 智能分批处理（默认每批30章）
+- 智能分批处理（默认每批15章）
 - 支持自定义批次大小
 - 错误恢复机制
+
+### 4. 草稿合并功能
+
+使用merge_drafts.py脚本将生成的章节合并为完整小说：
+
+```bash
+# 合并所有章节草稿
+python 05_script/merge_drafts.py
+
+# 合并指定范围的章节
+python 05_script/merge_drafts.py --start 1 --end 10
+
+# 输出到指定目录
+python 05_script/merge_drafts.py --output 07_output/
+```
+
+合并功能：
+- 自动按章节顺序合并Markdown文件
+- 添加章节标题和分隔符
+- 生成完整的小说文档
+- 支持自定义输出格式和目录
 
 ### 2. 日志查看
 
@@ -427,10 +499,28 @@ python 05_script/expand_chapters.py --start 1 --end 20
 - 根据需要调整top_p参数
 
 ### 3. 批量处理优化
-- 合理设置批量处理批次大小（默认30章）
+- 合理设置批量处理批次大小（默认15章）
 - 大规模项目建议分批次生成大纲
 - 定期检查生成质量和连贯性
 - 利用历史版本管理跟踪生成进度
+
+## ⚠️ 注意事项
+
+### 使用建议
+- **首次使用**：建议从小规模项目开始，熟悉工作流程后再处理大规模内容
+- **模型选择**：复杂推理任务使用GLM-4-Long，快速生成使用GLM-4.5-Flash
+- **参数调整**：根据生成质量调整temperature、max_tokens等参数
+- **定期备份**：利用历史版本管理功能定期备份重要文件
+
+### 性能优化
+- **批量处理**：合理设置批次大小，避免单次处理过多内容
+- **内存管理**：处理大量章节时注意内存使用情况
+- **网络稳定**：确保网络连接稳定，避免API调用失败
+
+### 内容质量
+- **人工校验**：AI生成内容需要人工审核和修改
+- **风格一致性**：通过style_guide.yaml保持写作风格一致
+- **伏笔管理**：合理规划伏笔的埋设和回收
 
 ## 🤝 贡献指南
 
