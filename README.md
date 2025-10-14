@@ -1,134 +1,91 @@
-# 小说创作AI Agent - 使用指南
+# 小说创作 AI Agent
 
-## 📖 项目简介
+一个基于多模型大语言模型的长篇小说创作助手，采用“核心设定 + 大纲锚定 + 滑动窗口扩写 + 日志与版本管理”的完整流水线，帮助你从素材到成书。
 
-小说创作AI Agent是一个基于多种AI大语言模型的自动化小说创作辅助工具。它采用"大纲锚定+滑动窗口扩写+人工校验"的工作流程，帮助用户从原始素材生成完整的签约级小说内容。
+## 主要特性
 
-**支持的AI模型：**
-- 智谱AI
-- 豆包
+- 智能章节大纲生成：从整体大纲自动拆分并批量生成详细章节大纲
+- 滑动窗口扩写：利用上下文窗口保持剧情连贯、人物一致
+- 多模型支持：内置智谱、豆包、Ark 多模型切换与容错
+- 完整工程化：目录模板、配置校验、日志记录、历史版本备份
+- 批量处理能力：适配长篇创作需求（几十到上百章）
 
-**核心优势：**
-- 智能大纲生成和批量处理
-- 滑动窗口技术确保故事连贯性
-- 多模型支持，可根据任务需求灵活选择
-- 完善的版本管理和日志系统
-
-### 🎯 核心特性
-
-- **智能大纲生成**：基于核心设定自动生成章节大纲
-- **滑动窗口扩写**：确保故事连贯性和人物一致性
-- **多阶段创作流程**：从设定到草稿的完整创作链路
-- **多模型AI支持**：支持智谱AI、豆包、Ark等多种AI模型
-- **灵活的配置系统**：支持多种模型和参数调整
-- **完善的日志记录**：追踪创作过程和API调用记录
-- **批量处理能力**：支持大规模章节的批量生成和扩写
-
-## 🏗️ 项目结构
-
-### 核心模块说明
-
-**novel_generator/** 是项目的核心代码模块，包含以下主要组件：
-
-- **core/**: 核心功能模块
-  - [`chapter_expander.py`](novel_generator/core/chapter_expander.py:1) - 章节扩写器，实现基于滑动窗口的章节内容生成
-  - [`outline_generator.py`](novel_generator/core/outline_generator.py:1) - 大纲生成器，负责章节大纲的生成
-  - [`batch_outline_generator.py`](novel_generator/core/batch_outline_generator.py:1) - 批量大纲生成器，支持大规模章节处理
-  - [`project_manager.py`](novel_generator/core/project_manager.py:1) - 项目管理器，负责项目初始化和结构管理
-  - [`sliding_window.py`](novel_generator/core/sliding_window.py:1) - 滑动窗口模块，确保故事连贯性
-
-- **config/**: 配置管理
-  - [`settings.py`](novel_generator/config/settings.py:1) - 设置管理器，处理所有配置相关的逻辑
-
-- **utils/**: 工具模块
-  - [`api_client.py`](novel_generator/utils/api_client.py:1) - API客户端，处理与AI模型的通信
-  - [`file_handler.py`](novel_generator/utils/file_handler.py:1) - 文件处理器，负责文件读写操作
-  - [`logger.py`](novel_generator/utils/logger.py:1) - 日志管理器，记录系统运行状态
-  - [`multi_model_client.py`](novel_generator/utils/multi_model_client.py:1) - 多模型客户端，支持多种AI模型的切换和管理
-
-### 目录结构
+## 目录结构
 
 ```
 SoundNovel/
-├── novel_generator/           # 核心代码模块
-│   ├── core/                  # 核心功能模块
-│   │   ├── chapter_expander.py    # 章节扩写器
-│   │   ├── outline_generator.py   # 大纲生成器
-│   │   ├── batch_outline_generator.py # 批量大纲生成器
-│   │   ├── project_manager.py     # 项目管理器
-│   │   └── sliding_window.py      # 滑动窗口模块
-│   ├── config/                # 配置管理
-│   │   └── settings.py        # 设置管理器
-│   ├── templates/              # 模板文件
-│   └── utils/                 # 工具模块
-│       ├── api_client.py      # API客户端
-│       ├── file_handler.py    # 文件处理器
-│       ├── logger.py          # 日志管理器
-│       └── multi_model_client.py # 多模型客户端
-├── 01_source/                 # 原始素材区
-│   ├── core_setting.yaml      # 核心设定文件
-│   └── overall_outline.yaml   # 整体大纲文件
-├── 02_outline/                # 大纲细化区
-│   ├── chapter_outline_01-58.yaml # 章节大纲文件
-│   └── outline_history/       # 大纲历史版本
-├── 03_draft/                  # 小说草稿区
-│   ├── chapter_01.md         # 章节草稿文件
-│   ├── chapter_02.md         # 章节草稿文件
-│   ├── draft_history/        # 草稿历史版本
-│   └── merge_drafts.py       # 草稿合并脚本
-├── 04_prompt/                 # Prompt模板库
-│   ├── chapter_expand_prompt.yaml # 扩写提示词模板
-│   └── style_guide.yaml      # 风格指导文件
-├── 05_script/                 # 工具脚本区
-│   ├── main.py               # 主程序
-│   ├── expand_chapters.py    # 章节扩写脚本
-│   └── merge_drafts.py       # 草稿合并脚本
-├── 06_log/                    # 日志区
-│   ├── ai_api_logs/          # API调用日志
-│   └── system_logs/         # 系统日志
-├── 07_output/                 # 最终输出区
-├── source/                    # 源文件区
-│   └── 越女剑.txt           # 示例源文件
-└── README.md                 # 项目说明文档
+├── 01_source/                 # 核心素材与设定
+│   ├── core_setting.yaml      # 核心设定（世界观/人物/冲突/伏笔）
+│   └── overall_outline.yaml   # 整体大纲（按幕组织）
+├── 02_outline/                # 章节大纲与历史
+│   ├── chapter_outline_01-XX.yaml # 章节大纲（XX为总章节数）
+│   └── outline_history/       # 大纲历史备份
+├── 03_draft/                  # 章节草稿与历史
+│   ├── chapter_01.md          # 章节草稿
+│   └── draft_history/         # 草稿历史备份
+├── 04_prompt/                 # 提示词模板与风格指南
+│   ├── chapter_expand_prompt.yaml
+│   └── style_guide.yaml
+├── 05_script/                 # 脚本入口
+│   ├── main.py                # 项目初始化与大纲生成
+│   ├── expand_chapters.py     # 章节扩写（单章/区间）
+│   └── merge_drafts.py        # 合并草稿生成成书
+├── 06_log/                    # 日志目录
+│   ├── ai_api_logs/           # API 调用日志
+│   └── system_logs/           # 系统运行日志
+├── 07_output/                 # 最终输出（成书）
+├── novel_generator/           # 核心代码
+│   ├── core/                  # 大纲/扩写/项目管理/滑窗
+│   ├── config/                # Settings 配置模型
+│   └── utils/                 # API 客户端、日志、文件工具
+├── pyproject.toml             # 依赖声明
+└── uv.lock                    # 依赖锁（可选）
 ```
 
-## 🚀 快速开始
+## 安装与环境
 
-### 1. 环境准备
+- Python 版本：`>=3.13.5`
+- 操作系统：Windows（已验证），其他系统需自行适配
 
-确保您的系统已安装以下依赖：
+安装依赖（推荐方式二选一）：
 
-```bash
-# 安装Python依赖
-pip install -r pyproject.toml
+- 方式 A（pip）
+  - 在项目根目录执行：
+    - 创建并激活虚拟环境（可选）：
+      - `python -m venv .venv`
+      - `.\.venv\Scripts\activate`
+    - 升级 pip：`pip install -U pip`
+    - 安装项目与依赖：`pip install .`
 
-# 或手动安装主要依赖
-pip install pyyaml>=6.0.2 flask>=3.1.1 zhipuai>=2.1.5.20250801
+- 方式 B（uv，可复现实验环境）
+  - 安装 uv：`pip install uv`
+  - 在项目根目录执行同步：`uv sync`
+
+提示：`pip install -r pyproject.toml`是无效命令，请使用以上两种方式之一。
+
+## 快速开始
+
+### 1. 初始化项目结构
+
+在项目根目录执行：
+
 ```
-
-### 2. 项目初始化
-
-```bash
-# 进入项目目录
-cd d:\Project\SoundNovel
-
-# 初始化项目
 python 05_script/main.py --init
 ```
 
-初始化过程会：
-- 创建必要的目录结构
-- 生成默认配置文件 `05_script/config.json`
-- 创建核心设定和整体大纲的模板文件
-- 设置日志系统
+该命令会：
+- 创建标准目录结构
+- 生成模板文件：`01_source/core_setting.yaml`、`01_source/overall_outline.yaml`
+- 生成默认配置：`05_script/config.json`
+- 准备日志目录
 
-### 3. 配置API密钥
+### 2. 配置 API 与生成参数
 
-编辑 `05_script/config.json` 文件，配置您的AI API密钥。系统支持多种AI模型：
+编辑 `05_script/config.json`，配置 API 与生成参数（以下为默认结构，按需调整）：
 
-```json
+```
 {
-  "api_key": "您的智谱AI API密钥",
+  "api_key": "你的智谱 API 密钥",
   "api_base_url": "https://open.bigmodel.cn/api/paas/v4",
   "models": {
     "logic_analysis_model": "glm-4-long",
@@ -137,23 +94,17 @@ python 05_script/main.py --init
     "expansion_model": "glm-4.5-flash",
     "default_model": "glm-4.5-flash"
   },
-  "doubao_api_key": "您的豆包API密钥（可选）",
+  "doubao_api_key": "你的豆包 API 密钥（可选）",
   "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
-  "default_model": "zhipu",
-  "available_models": ["zhipu", "doubao"],
+  "ark_api_key": "你的 Ark API 密钥或设置环境变量 ARK_API_KEY（可选）",
+  "default_model": "zhipu",                   
+  "available_models": ["zhipu", "doubao", "ark"],
   "max_tokens": 4000,
   "temperature": 0.7,
   "top_p": 0.7,
   "system": {
-    "api": {
-      "max_retries": 5,
-      "retry_delay": 2,
-      "timeout": 60
-    },
-    "logging": {
-      "level": "INFO",
-      "file": "06_log/novel_generator.log"
-    }
+    "api": {"max_retries": 5, "retry_delay": 2, "timeout": 60},
+    "logging": {"level": "INFO", "file": "06_log/novel_generator.log"}
   },
   "paths": {
     "core_setting": "01_source/core_setting.yaml",
@@ -176,76 +127,104 @@ python 05_script/main.py --init
 }
 ```
 
-**多模型支持说明：**
-- **智谱AI**：默认使用，支持GLM-4-Long（复杂推理）和GLM-4.5-Flash（快速生成）
-- **豆包**：可选配置，支持ep-20241210233657-lz8fv模型
+配置校验规则（`Settings.validate()`）：
+- 必填：`api_key`、`api_base_url`、`paths.core_setting`
+- 其余为可选，有默认值；可通过 `default_model` 切换模型类型
 
-### 4. 填写核心设定
+### 3. 填写核心设定与整体大纲
 
-编辑 `01_source/core_setting.yaml` 文件，填写您的小说核心设定：
+- `01_source/core_setting.yaml`：世界观、核心冲突、人物小传、伏笔清单等
+- `01_source/overall_outline.yaml`：按幕描述剧情（支持“第1幕/第一幕”等命名），并列出关键转折点
 
-*例子*：
-```yaml
+示例（节选）：
+
+```
 世界观: "这是一个灵气充沛的修仙世界..."
-核心冲突: "主线矛盾围绕凛风与曦羽之间的情感纠葛..."
+核心冲突: "主线矛盾围绕两位角色的价值观冲突..."
 人物小传:
-  主角: 
+  主角:
     姓名: "凛风"
     身份: "散修"
-    性格: "自信，看重名声"
-    核心动机: "提升在修仙界的名声"
-  配角1: 
-    姓名: "曦羽"
-    身份: "邻宗门修仙者"
-    性格: "正义感，坚守原则"
-    核心动机: "维护修仙界正义"
-伏笔清单:
-  - 伏笔1: "凛风的天赋极高"
-  - 伏笔2: "木条法器的特殊作用"
-  - 伏笔3: "心性变化的后果"
-```
-
-### 5. 制定整体大纲
-
-编辑 `01_source/overall_outline.yaml` 文件，制定故事的整体框架：
-
-*例子*：
-```yaml
-第一幕: "第1-5章，介绍凛风的身世背景..."
-第二幕: "第6-15章，详细描述找灵犬过程中与曦羽的冲突..."
-第三幕: "第16-20章，曦羽为报仇约凛风进行生死对决..."
+    性格: "自信"
+    核心动机: "提升名声"
 关键转折点:
-  - 第6章: "凛风为找灵犬与曦羽相遇并发生对决"
-  - 第10章: "凛风与曦羽因心性暴躁爆发争吵"
-  - 第16章: "曦羽与凛风打架决胜负"
+  - 第6章: "相遇并发生冲突"
 ```
 
-## 📝 使用流程
+### 4. 生成章节大纲
 
-### 阶段一：生成章节大纲
-
-```bash
-# 自动生成所有章节的详细大纲
+```
 python 05_script/main.py
 ```
 
-程序会：
-1. 读取您的核心设定和整体大纲
-2. 自动从整体大纲中提取总章节数量
-3. 使用批量大纲生成器分批生成详细章节大纲（每批15章）
-4. 保存到 `02_outline/chapter_outline_01-{总章节数}.yaml`
-5. 输出生成结果供您审核
+流程与输出：
+- 自动检测总章节数（支持中文/数字幕名）
+- 按批（默认每批15章）生成章节大纲
+- 输出文件：`02_outline/chapter_outline_01-{总章节数}.yaml`
 
-### 批量大纲生成器特性
+### 5. 扩写章节草稿
 
-- **自动章节数量检测**：从整体大纲中自动提取总章节数量
-- **分批处理**：大量章节自动分批生成，避免单次处理过多内容
-- **智能幕名称识别**：支持数字格式（第1幕、第2幕）和中文格式（第一幕、第二幕）
-- **错误恢复**：生成失败时自动使用模拟数据作为备用方案
+支持单章或区间扩写：
 
-### 阶段二：审核和优化大纲
+- 单章扩写示例：
+  - `python 05_script/expand_chapters.py --chapter 3 --config 05_script/config.json`
 
-查看生成的章节大纲文件，根据需要进行优化：
+- 批量扩写示例（区间）：
+  - `python 05_script/expand_chapters.py --start 1 --end 10 --config 05_script/config.json`
+
+说明：
+- 扩写脚本默认大纲文件名存在示例常量（如 `chapter_outline_01-58.yaml` 或 `chapter_outline_01-10.yaml`），请根据你生成的实际文件名调整脚本中的 `outline_file` 或保持生成文件名一致。
+- 扩写过程使用 `04_prompt/chapter_expand_prompt.yaml` 与 `style_guide.yaml`，可自行定制风格与输出要求。
+- 草稿输出在 `03_draft/chapter_XX.md`，自动备份至 `draft_history/`。
+
+### 6. 合并成书输出
+
+将草稿合并为一个 txt：
+
+```
+python 05_script/merge_drafts.py
+```
+
+可选参数：
+- `--draft-dir` 草稿目录（默认读取配置中的 `paths.draft_dir`）
+- `--output` 输出文件（默认写入 `07_output/merged_novel_YYYYMMDD_HHMMSS.txt`）
+- `--no-toc` 关闭目录生成
+- `--no-metadata` 关闭元数据头
+
+## 提示词与风格
+
+- `04_prompt/chapter_expand_prompt.yaml`：章节扩写模板，包含核心设定、上下文回顾、当前章节大纲与风格约束；强调避免提前透露未来情节、专注当前章节的细节展开。
+- `04_prompt/style_guide.yaml`：风格指导模板（语言风格、对话特点、场景描写、节奏控制、心理描写、禁忌等），建议先按题材填写，再在扩写中迭代优化。
+
+## 日志与备份
+
+- 系统日志：`06_log/novel_generator.log`
+- API 调用与统计：`06_log/ai_api_logs/`
+- 章节草稿备份：`03_draft/draft_history/`
+- 大纲历史备份：`02_outline/outline_history/`
+
+## 常见问题
+
+- 报错“API密钥未配置”：请在 `05_script/config.json` 中填写 `api_key`
+- 报错“缺少必要文件”：运行 `python 05_script/main.py --init` 重新生成结构与模板
+- 扩写脚本找不到大纲：确认 `02_outline/` 下文件名与脚本中 `outline_file` 常量一致，或调整脚本
+- 章节不连续：`merge_drafts.py` 会提示缺失章节并允许继续，建议先补齐或在合并时保留目录方便校对
+
+## 开发与扩展
+
+- 核心模块
+  - `novel_generator/core/outline_generator.py`：大纲生成与提示词构建
+  - `novel_generator/core/chapter_expander.py`：章节扩写与质量评估
+  - `novel_generator/core/sliding_window.py`：上下文管理与断裂修复
+  - `novel_generator/core/project_manager.py`：初始化与结构校验
+  - `novel_generator/utils/multi_model_client.py`：多模型路由、熔断与重试
+
+- 依赖管理
+  - 在 `pyproject.toml` 中声明依赖；使用 `pip install .` 或 `uv sync` 安装
+
+## 许可与声明
+
+本项目用于技术探索与写作辅助，请遵循相关平台与模型的使用条款，合理设置 `copyright_bypass`。
 
 *例子*：
 ```yaml

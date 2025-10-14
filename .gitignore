@@ -120,10 +120,33 @@ dmypy.json
 .pyre/
 
 # 项目特定文件
-# 输出文件
-03_draft/*.md
-02_outline/*.yaml
-# 日志文件
-logs/
-# 失败文件
-failed/
+# IDE 设置
+.vscode/
+
+# 操作系统杂项
+.DS_Store
+Thumbs.db
+
+# 配置与敏感内容
+01_source/core_setting.yaml
+01_source/overall_outline.yaml
+05_script/config.json
+
+# 示例文件保留（不要屏蔽示例）
+!01_source/core_setting.example.yaml
+!01_source/overall_outline.example.yaml
+!05_script/config.example.json
+!source/examples/**
+
+# 生成内容（不进入公开仓库）
+02_outline/
+02_outline/outline_history/
+03_draft/
+03_draft/draft_history/
+06_log/
+07_output/
+source/
+
+# 更精确的忽略规则（保留通配兼容）
+03_draft/**/*.md
+02_outline/**/*.yaml
