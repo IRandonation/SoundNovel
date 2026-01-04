@@ -199,12 +199,16 @@ class DoubaoClient(BaseModelClient):
         
         # API配置
         self.api_key = config.get('doubao_api_key', os.environ.get("ARK_API_KEY", ''))
+        self.base_url = config.get('doubao_api_base_url', None)
         self.max_tokens = config.get('max_tokens', 8000)
         self.temperature = config.get('temperature', 0.9)
         self.top_p = config.get('top_p', 0.9)
         
         # 初始化Ark客户端
-        self.client = Ark(api_key=self.api_key)
+        if self.base_url:
+            self.client = Ark(api_key=self.api_key, base_url=self.base_url)
+        else:
+            self.client = Ark(api_key=self.api_key)
         
         # 请求配置
         self.max_retries = config.get('system', {}).get('api', {}).get('max_retries', 5)
@@ -252,8 +256,12 @@ class DoubaoClient(BaseModelClient):
         """测试连接"""
         try:
             test_prompt = "请回复'连接成功'以确认API正常工作。"
+            
+            # Try to get configured model, otherwise fallback to default
+            model = self.config.get('doubao_models', {}).get('default_model', 'doubao-seed-1-6-250615')
+            
             response = self.chat_completion(
-                "doubao-seed-1-6-250615",  # 豆包默认模型
+                model,  # 使用配置的模型
                 [
                     {"role": "user", "content": test_prompt}
                 ]
@@ -304,6 +312,14 @@ class MultiModelClient:
                 'default_model': 'doubao-seed-1-6-250615'
             }
         }
+
+        # Update from config if available
+        if 'models' in config:
+            self.model_mapping['zhipu'].update(config['models'])
+        
+        if 'doubao_models' in config:
+            self.model_mapping['doubao'].update(config['doubao_models'])
+
     
     def get_client(self, model_type: str = None) -> BaseModelClient:
         """

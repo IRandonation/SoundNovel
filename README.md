@@ -17,12 +17,10 @@ SoundNovel/
 ├── 01_source/                 # 核心素材与设定
 │   ├── core_setting.yaml      # 核心设定（世界观/人物/冲突/伏笔）
 │   └── overall_outline.yaml   # 整体大纲（按幕组织）
-├── 02_outline/                # 章节大纲与历史
-│   ├── chapter_outline_01-XX.yaml # 章节大纲（XX为总章节数）
-│   └── outline_history/       # 大纲历史备份
-├── 03_draft/                  # 章节草稿与历史
-│   ├── chapter_01.md          # 章节草稿
-│   └── draft_history/         # 草稿历史备份
+├── 02_outline/                # 章节大纲
+│   └── chapter_outline_01-XX.yaml # 章节大纲（XX为总章节数）
+├── 03_draft/                  # 章节草稿
+│   └── chapter_01.txt         # 章节草稿
 ├── 04_prompt/                 # 提示词模板与风格指南
 │   ├── chapter_expand_prompt.yaml
 │   └── style_guide.yaml
@@ -33,7 +31,6 @@ SoundNovel/
 ├── 06_log/                    # 日志目录
 │   ├── ai_api_logs/           # API 调用日志
 │   └── system_logs/           # 系统运行日志
-├── 07_output/                 # 最终输出（成书）
 ├── novel_generator/           # 核心代码
 │   ├── core/                  # 大纲/扩写/项目管理/滑窗
 │   ├── config/                # Settings 配置模型

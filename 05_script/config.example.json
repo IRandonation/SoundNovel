@@ -2,7 +2,7 @@
   "api_key": "YOUR_ZHIPU_API_KEY",
   "api_base_url": "https://open.bigmodel.cn/api/paas/v4",
   "doubao_api_key": "YOUR_DOUBAO_API_KEY",
-  "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+  "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
   "ark_api_key": "YOUR_ARK_API_KEY",
   "models": {
     "logic_analysis_model": "glm-4-long",

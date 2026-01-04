@@ -57,9 +57,7 @@ class ProjectManager:
         directories = [
             "01_source",
             "02_outline",
-            "02_outline/outline_history", 
             "03_draft",
-            "03_draft/draft_history",
             "04_prompt",
             "05_script",
             "06_log",
@@ -84,6 +82,13 @@ class ProjectManager:
                 "expansion_model": "glm-4.5-flash",
                 "default_model": "glm-4.5-flash"
             },
+            "doubao_models": {
+                "logic_analysis_model": "ep-20241210233657-lz8fv",
+                "major_chapters_model": "ep-20241210233657-lz8fv",
+                "sub_chapters_model": "ep-20241210233657-lz8fv",
+                "expansion_model": "ep-20241210233657-lz8fv",
+                "default_model": "ep-20241210233657-lz8fv"
+            },
             "max_tokens": 4000,
             "temperature": 0.7,
             "top_p": 0.7,
@@ -103,7 +108,8 @@ class ProjectManager:
                 "outline_dir": "02_outline/",
                 "draft_dir": "03_draft/",
                 "prompt_dir": "04_prompt/",
-                "log_dir": "06_log/"
+                "log_dir": "06_log/",
+                "novel_dir": "07_novel/"
             }
         }
         

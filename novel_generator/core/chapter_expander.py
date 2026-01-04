@@ -11,7 +11,6 @@ from datetime import datetime
 import logging
 
 from novel_generator.config.settings import Settings
-from novel_generator.utils.api_client import ZhipuAIClient
 from novel_generator.utils.multi_model_client import MultiModelClient
 
 
@@ -24,7 +23,7 @@ class ChapterExpander:
         
         Args:
             config: 配置信息
-            multi_model_client: 多模型客户端，如果提供则使用多模型功能
+            multi_model_client: 多模型客户端
         """
         self.config = config
         self.settings = Settings(config)
@@ -33,10 +32,8 @@ class ChapterExpander:
         # 初始化AI API客户端
         if multi_model_client:
             self.multi_model_client = multi_model_client
-            self.use_multi_model = True
         else:
-            self.api_client = ZhipuAIClient(config)
-            self.use_multi_model = False
+            self.multi_model_client = MultiModelClient(config)
         
     def expand_chapter(self, chapter_num: int, 
                       chapter_outline: Dict[str, Any],
@@ -166,30 +163,8 @@ class ChapterExpander:
         return previous_context
     
     def _call_ai_api(self, prompt: str) -> str:
-        """调用AI API生成内容"""
-        try:
-            self.logger.info("正在调用AI API生成章节内容...")
-            
-            if self.use_multi_model:
-                # 使用多模型客户端
-                response = self.multi_model_client.expand_chapter(prompt)
-                model_type = self.multi_model_client.get_current_model()
-                self.logger.info(f"多模型API调用成功，使用模型: {model_type}")
-            else:
-                # 使用传统API客户端
-                response = self.api_client.expand_chapter(prompt)
-                self.logger.info("传统API调用成功")
-            
-            if not response:
-                self.logger.warning("AI API返回空响应，使用模拟数据")
-                return self._get_mock_response()
-            
-            return response
-            
-        except Exception as e:
-            self.logger.error(f"AI API调用失败: {e}")
-            self.logger.info("使用模拟数据作为备用方案")
-            return self._get_mock_response()
+        """调用AI API (Legacy wrapper)"""
+        return self.multi_model_client.chat_completion(messages=[{"role": "user", "content": prompt}])
     
     def _get_mock_response(self) -> str:
         """获取模拟响应（用于测试）"""
@@ -368,7 +343,10 @@ class ChapterExpander:
             str: 实际保存路径
         """
         try:
-            output_path = Path(output_dir) / f"chapter_{chapter_num:02d}.md"
+            # 清理内容
+            content = self._clean_content(content)
+            
+            output_path = Path(output_dir) / f"chapter_{chapter_num:02d}.txt"
             
             # 确保输出目录存在
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -388,20 +366,35 @@ class ChapterExpander:
         except Exception as e:
             self.logger.error(f"保存章节文件失败: {e}")
             raise
+
+    def _clean_content(self, content: str) -> str:
+        """
+        清理内容，移除所有空行
+        
+        Args:
+            content: 原始内容
+            
+        Returns:
+            str: 清理后的内容
+        """
+        if not content:
+            return ""
+            
+        lines = content.splitlines()
+        # 只保留非空行
+        cleaned_lines = [line for line in lines if line.strip()]
+        # 用单个换行符连接，形成紧凑的文本块
+        return '\n'.join(cleaned_lines)
+
     
     def _backup_chapter(self, file_path: Path, chapter_num: int) -> str:
-        """备份章节文件"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_name = f"chapter_{chapter_num:02d}_{timestamp}{file_path.suffix}"
-        backup_path = file_path.parent.parent / "draft_history" / backup_name
-        
-        backup_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 复制文件
-        import shutil
-        shutil.copy2(file_path, backup_path)
-        
-        return str(backup_path)
+        """
+        备份章节文件
+        注意：此方法保留是为了兼容性，但不再创建 draft_history 目录
+        如果需要备份功能，建议使用版本控制系统
+        """
+        # 功能已禁用，直接返回空路径
+        return ""
     
     def expand_multiple_chapters(self, chapter_range: Tuple[int, int],
                                 outline_file: str,

@@ -56,7 +56,7 @@ class APIConfig:
     top_p: float = 0.7
     max_retries: int = 5
     retry_delay: int = 2
-    timeout: int = 60
+    timeout: int = 120
 
 
 @dataclass
@@ -77,8 +77,6 @@ class PathConfig:
     draft_dir: str = "03_draft/"
     prompt_dir: str = "04_prompt/"
     log_dir: str = "06_log/"
-    outline_history_dir: str = "02_outline/outline_history/"
-    draft_history_dir: str = "03_draft/draft_history/"
     api_log_dir: str = "06_log/ai_api_logs/"
     system_log_dir: str = "06_log/system_logs/"
 
@@ -349,8 +347,6 @@ class Settings:
             "draft_dir": self.path_config.draft_dir,
             "prompt_dir": self.path_config.prompt_dir,
             "log_dir": self.path_config.log_dir,
-            "outline_history_dir": self.path_config.outline_history_dir,
-            "draft_history_dir": self.path_config.draft_history_dir,
             "api_log_dir": self.path_config.api_log_dir,
             "system_log_dir": self.path_config.system_log_dir
         }

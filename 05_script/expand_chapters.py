@@ -171,7 +171,7 @@ def expand_single_chapter(chapter_num: int, config: Dict[str, Any],
             print(f"   使用模型: {multi_model_client.get_current_model()}")
         
         # 准备上下文
-        context_manager = ContextManager(config)
+        context_manager = ContextManager(config, multi_model_client)
         previous_context, needs_repair = context_manager.prepare_context(
             current_chapter=chapter_num,
             outline_file=outline_file,

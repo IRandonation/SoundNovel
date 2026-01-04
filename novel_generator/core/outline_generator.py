@@ -11,24 +11,28 @@ from datetime import datetime
 import logging
 
 from novel_generator.config.settings import Settings
-from novel_generator.utils.api_client import ZhipuAIClient
+from novel_generator.utils.multi_model_client import MultiModelClient
 
 
 class OutlineGenerator:
     """大纲生成器类"""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], multi_model_client: MultiModelClient = None):
         """
         初始化大纲生成器
         
         Args:
             config: 配置信息
+            multi_model_client: 多模型客户端
         """
         self.config = config
         self.settings = Settings(config)
         self.logger = logging.getLogger(__name__)
         # 初始化AI API客户端
-        self.api_client = ZhipuAIClient(config)
+        if multi_model_client:
+            self.multi_model_client = multi_model_client
+        else:
+            self.multi_model_client = MultiModelClient(config)
         
     def generate_outline(self, core_setting: Dict[str, Any], 
                         overall_outline: Dict[str, Any],
@@ -217,8 +221,14 @@ class OutlineGenerator:
         try:
             self.logger.info("正在调用AI API生成章节大纲...")
             
-            # 使用API客户端调用AI
-            response = self.api_client.generate_outline(prompt)
+            messages = [
+                {'role': 'system', 'content': '你是一个专业的小说大纲策划师，擅长创作引人入胜的故事情节。'},
+                {'role': 'user', 'content': prompt}
+            ]
+            
+            # 使用 MultiModelClient 调用 AI
+            # 自动使用配置的 default_model
+            response = self.multi_model_client.chat_completion(messages=messages)
             
             if not response:
                 self.logger.warning("AI API返回空响应，使用模拟数据")
@@ -391,18 +401,13 @@ class OutlineGenerator:
             raise
     
     def _backup_file(self, file_path: Path) -> str:
-        """备份文件"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_name = f"{file_path.stem}_{timestamp}{file_path.suffix}"
-        backup_path = file_path.parent / "outline_history" / backup_name
-        
-        backup_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 复制文件
-        import shutil
-        shutil.copy2(file_path, backup_path)
-        
-        return str(backup_path)
+        """
+        备份文件
+        注意：此方法保留是为了兼容性，但不再创建 outline_history 目录
+        如果需要备份功能，建议使用版本控制系统
+        """
+        # 功能已禁用，直接返回空路径
+        return ""
     
     def load_outline(self, file_path: str) -> Dict[str, Any]:
         """
@@ -429,25 +434,37 @@ class OutlineGenerator:
                         core_setting: Dict[str, Any]) -> Dict[str, Any]:
         """
         优化大纲
-        
-        Args:
-            outline: 原始大纲
-            core_setting: 核心设定
-            
-        Returns:
-            Dict[str, Any]: 优化后的大纲
         """
         try:
             self.logger.info("开始优化大纲...")
             
+            fixed_count = 0
+            for chapter, content in outline.items():
+                # 1. 确保核心字段存在
+                if '核心事件' not in content or not content['核心事件']:
+                    content['核心事件'] = "待补充核心事件"
+                    fixed_count += 1
+                
+                # 2. 规范化字数目标
+                if '字数目标' not in content:
+                    content['字数目标'] = "2000字"
+                    fixed_count += 1
+                
+                # 3. 确保伏笔回收字段
+                if '伏笔回收' not in content:
+                    content['伏笔回收'] = "无"
+                    fixed_count += 1
+
+                # 4. 确保标题存在
+                if '标题' not in content:
+                    content['标题'] = f"未命名{chapter}"
+                    fixed_count += 1
+
+            if fixed_count > 0:
+                self.logger.info(f"自动修复了大纲中的 {fixed_count} 处格式问题")
+            
             # 检查人物一致性
             outline = self._check_character_consistency(outline, core_setting)
-            
-            # 检查伏笔连贯性
-            outline = self._check_foreshadowing_consistency(outline)
-            
-            # 检查节奏合理性
-            outline = self._check_pacing(outline)
             
             self.logger.info("大纲优化完成")
             return outline

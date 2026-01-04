@@ -16,18 +16,20 @@ from novel_generator.config.settings import Settings
 class SlidingWindow:
     """滑动窗口类"""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], multi_model_client=None):
         """
         初始化滑动窗口
         
         Args:
             config: 配置信息
+            multi_model_client: 多模型客户端
         """
         self.config = config
         self.settings = Settings(config)
         self.logger = logging.getLogger(__name__)
         self.window_size = self.settings.get_context_chapters()
         self.context_cache = {}
+        self.multi_model_client = multi_model_client
         
     def build_context(self, current_chapter: int, 
                      available_chapters: List[int],
@@ -108,7 +110,7 @@ class SlidingWindow:
                         content = f.read()
                     
                     # 提取关键信息
-                    key_info = self._extract_key_info(content, chapter_num)
+                    key_info = self._extract_key_info(content, chapter_num, draft_dir)
                     context_parts.append(key_info)
                     
                 except Exception as e:
@@ -118,17 +120,43 @@ class SlidingWindow:
         
         return "\n\n".join(context_parts)
     
-    def _extract_key_info(self, content: str, chapter_num: int) -> str:
+    def _extract_key_info(self, content: str, chapter_num: int, draft_dir: str = None) -> str:
         """
         从章节内容中提取关键信息
         
         Args:
             content: 章节内容
             chapter_num: 章节号
+            draft_dir: 草稿目录
             
         Returns:
             str: 关键信息
         """
+        # 1. 尝试读取已存在的摘要文件
+        if draft_dir:
+            summary_path = Path(draft_dir) / f"chapter_{chapter_num:02d}.summary"
+            if summary_path.exists():
+                try:
+                    with open(summary_path, 'r', encoding='utf-8') as f:
+                        return f.read()
+                except Exception as e:
+                    self.logger.warning(f"读取摘要文件失败: {e}")
+
+        # 2. 如果有 LLM 客户端，使用 LLM 生成摘要
+        if self.multi_model_client:
+            summary = self._generate_llm_summary(content, chapter_num)
+            if summary:
+                # 保存摘要
+                if draft_dir:
+                    try:
+                        summary_path = Path(draft_dir) / f"chapter_{chapter_num:02d}.summary"
+                        with open(summary_path, 'w', encoding='utf-8') as f:
+                            f.write(summary)
+                    except Exception as e:
+                        self.logger.warning(f"保存摘要文件失败: {e}")
+                return summary
+
+        # 3. 降级方案：使用关键词提取
         # 提取章节标题（如果有）
         title = ""
         lines = content.split('\n')
@@ -178,6 +206,43 @@ class SlidingWindow:
         
         return key_info
     
+    def _generate_llm_summary(self, content: str, chapter_num: int) -> str:
+        """使用 LLM 生成章节摘要"""
+        try:
+            self.logger.info(f"正在为第{chapter_num}章生成智能摘要...")
+            
+            # 截取适当长度的内容以避免超出 context window，保留开头和结尾
+            if len(content) > 5000:
+                content_snippet = content[:3000] + "\n...\n" + content[-2000:]
+            else:
+                content_snippet = content
+
+            prompt = f"""请为小说第{chapter_num}章生成一份"剧情状态卡"，用于辅助下一章的创作。
+要求提取以下信息（保持简洁，总字数控制在300字以内）：
+1. 章节标题与核心事件：
+2. 当前时间与地点：
+3. 关键人物身心状态（位置、伤情、心情）：
+4. 关键物品/道具变动：
+5. 本章留下的即时悬念/未解决问题：
+
+原文内容：
+{content_snippet}
+"""
+            # 使用 logic_analysis_model
+            summary = self.multi_model_client.chat_completion(
+                stage='stage1',
+                messages=[
+                    {'role': 'system', 'content': '你是一个专业的小说助手，擅长分析剧情和提取关键信息。'},
+                    {'role': 'user', 'content': prompt}
+                ]
+            )
+            
+            return f"=== 第{chapter_num}章 剧情状态卡 ===\n{summary}"
+            
+        except Exception as e:
+            self.logger.error(f"生成摘要失败: {e}")
+            return None
+
     def optimize_window(self, current_chapter: int,
                        context: str,
                        chapter_outline: Dict[str, Any]) -> str:
@@ -424,16 +489,17 @@ class SlidingWindow:
 class ContextManager:
     """上下文管理器"""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], multi_model_client=None):
         """
         初始化上下文管理器
         
         Args:
             config: 配置信息
+            multi_model_client: 多模型客户端
         """
         self.config = config
         self.settings = Settings(config)
-        self.sliding_window = SlidingWindow(config)
+        self.sliding_window = SlidingWindow(config, multi_model_client)
         self.logger = logging.getLogger(__name__)
         
     def prepare_context(self, current_chapter: int, 
