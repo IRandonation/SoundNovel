@@ -8,8 +8,16 @@ import logging
 import time
 
 # Add project root to path
-project_root = Path(__file__).parent.resolve()
-sys.path.insert(0, str(project_root))
+if getattr(sys, 'frozen', False):
+    # If frozen (PyInstaller), use the directory of the executable
+    project_root = Path(sys.executable).parent
+else:
+    # If running from source, use the directory of this script
+    project_root = Path(__file__).parent.resolve()
+
+# Only add to sys.path if running from source (PyInstaller handles imports internally)
+if not getattr(sys, 'frozen', False):
+    sys.path.insert(0, str(project_root))
 
 from novel_generator.core.batch_outline_generator import BatchOutlineGenerator
 from novel_generator.core.chapter_expander import ChapterExpander
