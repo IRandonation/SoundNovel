@@ -19,8 +19,15 @@ def build():
     # Add gui_app.py as data so it can be run by streamlit
     datas.append(('gui_app.py', '.'))
     
-    # Ensure novel_generator is included
-    hiddenimports.append('novel_generator')
+    # Ensure essential libraries are included
+    hiddenimports.extend([
+        'novel_generator',
+        'yaml',
+        'requests',
+        'json',
+        'logging',
+        'volcenginesdkarkruntime', # For Doubao
+    ])
     
     # Build command args
     args = [
@@ -29,7 +36,7 @@ def build():
         '--onedir',
         '--clean',
         '--noconfirm',
-        '--windowed',
+        # '--windowed', # Disable windowed mode to see error console if it fails
     ]
     
     for src, dst in datas:
@@ -104,8 +111,23 @@ def build():
         dir_path.mkdir(exist_ok=True)
         print(f"   ✅ Created directory {dir_name}")
 
-    print("\n🎉 All done! You can now zip the following folder and share it:")
-    print(f"   👉 {dist_dir}")
+    print("\n📦 Creating zip archive for easy sharing...")
+    zip_base_name = project_root / "dist" / "SoundNovelAI_Distribution"
+    
+    # shutil.make_archive expects the base name (without extension), the format, 
+    # the root directory to zip from, and the specific directory inside root to zip.
+    # This ensures the zip file contains a top-level "SoundNovelAI" folder.
+    zip_path = shutil.make_archive(
+        base_name=str(zip_base_name),
+        format='zip',
+        root_dir=str(dist_dir.parent),
+        base_dir=dist_dir.name
+    )
+    
+    print(f"✅ Zip archive created successfully!")
+    print(f"   👉 {zip_path}")
+    
+    print("\n🎉 All done! You can now send this ZIP file directly to others.")
 
 if __name__ == '__main__':
     build()

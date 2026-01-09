@@ -213,20 +213,12 @@ class ChapterExpander:
             # 基本清理
             content = response.strip()
             
-            # 验证内容质量
-            content = self._validate_content(content, chapter_outline)
-            
-            # 评估内容质量
-            quality_scores = self._evaluate_content_quality(content, chapter_outline)
-            
-            # 如果前瞻性控制得分低于0.5，记录警告
-            if quality_scores['foresight_control'] < 0.5:
-                self.logger.warning(f"内容前瞻性控制不足，得分：{quality_scores['foresight_control']:.2f}")
-            
-            # 如果具体性得分低于0.5，记录警告
-            if quality_scores['concreteness'] < 0.5:
-                self.logger.warning(f"内容具体性不足，得分：{quality_scores['concreteness']:.2f}")
-            
+            # 简单的字数检查作为兜底
+            word_count = len(content)
+            target_count = self.settings.get_default_word_count()
+            if word_count < target_count * 0.6: # 放宽限制到60%
+                self.logger.warning(f"内容字数偏少：{word_count} < {target_count}")
+
             # 优化内容
             content = self._optimize_content(content)
             
@@ -237,97 +229,16 @@ class ChapterExpander:
             return response
     
     def _validate_content(self, content: str, chapter_outline: Dict[str, Any]) -> str:
-        """验证内容质量"""
-        # 检查字数
-        word_count = len(content)
-        target_count = self.settings.get_default_word_count()
-        
-        if word_count < target_count * 0.8:
-            self.logger.warning(f"内容字数不足：{word_count} < {target_count}")
-        elif word_count > target_count * 1.2:
-            self.logger.warning(f"内容字数过多：{word_count} > {target_count}")
-        
-        # 检查核心事件
-        core_event = chapter_outline.get('核心事件', '')
-        if core_event and core_event not in content:
-            self.logger.warning(f"核心事件未体现：{core_event}")
-        
-        # 检查前瞻性内容
-        future_keywords = ['最终', '结局', '后来', '从此', '以后', '最终成为', '最终走向', '最终被']
-        for keyword in future_keywords:
-            if keyword in content:
-                self.logger.warning(f"内容包含前瞻性关键词：{keyword}")
-        
-        # 检查内容具体性
-        vague_phrases = ['这个故事', '这个传说', '这段经历', '这段历史', '这个事件']
-        for phrase in vague_phrases:
-            if phrase in content:
-                self.logger.warning(f"内容包含概括性短语：{phrase}")
-        
-        # 检查场景描写
-        scene = chapter_outline.get('场景', '')
-        if scene and scene not in content:
-            self.logger.warning(f"场景描写不足：{scene}")
-        
+        """
+        (已弃用) 旧的机械验证逻辑
+        """
         return content
     
     def _optimize_content(self, content: str) -> str:
         """优化内容"""
         # 这里可以添加内容优化逻辑
-        # 如：调整段落、优化语言、检查逻辑等
-        
         return content
-    
-    def _evaluate_content_quality(self, content: str, chapter_outline: Dict[str, Any]) -> Dict[str, float]:
-        """评估章节内容质量"""
-        scores = {
-            'focus_score': 0.0,      # 内容聚焦度
-            'foresight_control': 0.0, # 前瞻性控制
-            'concreteness': 0.0,     # 具体性
-            'coherence': 0.0,        # 连贯性
-            'style_consistency': 0.0 # 风格一致性
-        }
-        
-        # 评估内容聚焦度
-        core_event = chapter_outline.get('核心事件', '')
-        if core_event and core_event in content:
-            scores['focus_score'] = 0.8
-            # 检查核心事件在内容中的比重
-            core_event_ratio = content.count(core_event) / len(content) * 100
-            if core_event_ratio > 0.5:
-                scores['focus_score'] = 1.0
-        
-        # 评估前瞻性控制
-        future_keywords = ['最终', '结局', '后来', '从此', '以后', '最终成为', '最终走向', '最终被']
-        future_count = sum(content.count(keyword) for keyword in future_keywords)
-        if future_count == 0:
-            scores['foresight_control'] = 1.0
-        elif future_count <= 2:
-            scores['foresight_control'] = 0.5
-        else:
-            scores['foresight_control'] = 0.0
-        
-        # 评估具体性
-        concrete_indicators = ['说', '做', '走', '看', '听', '想', '感到', '拿起', '放下', '转身']
-        concrete_count = sum(content.count(indicator) for indicator in concrete_indicators)
-        concrete_ratio = concrete_count / len(content) * 100
-        if concrete_ratio > 2.0:
-            scores['concreteness'] = 1.0
-        elif concrete_ratio > 1.0:
-            scores['concreteness'] = 0.5
-        else:
-            scores['concreteness'] = 0.0
-        
-        # 评估连贯性和风格一致性（这里简化处理）
-        scores['coherence'] = 0.8
-        scores['style_consistency'] = 0.8
-        
-        # 记录评估结果
-        overall_score = sum(scores.values()) / len(scores)
-        self.logger.info(f"内容质量评估结果：{overall_score:.2f} (聚焦度:{scores['focus_score']:.2f}, 前瞻控制:{scores['foresight_control']:.2f}, 具体性:{scores['concreteness']:.2f})")
-        
-        return scores
-    
+
     def save_chapter(self, chapter_num: int, content: str, 
                     output_dir: str, backup: bool = True) -> str:
         """
@@ -445,8 +356,16 @@ class ChapterExpander:
                         # 移除最旧的章节
                         old_chapter = chapter_num - context_window - 1
                         if old_chapter >= chapter_range[0]:
-                            old_content_file = output_dir / f"chapter_{old_chapter:02d}.md"
-                            if old_content_file.exists():
+                            old_content_file_txt = output_dir / f"chapter_{old_chapter:02d}.txt"
+                            old_content_file_md = output_dir / f"chapter_{old_chapter:02d}.md"
+                            
+                            old_content_file = None
+                            if old_content_file_txt.exists():
+                                old_content_file = old_content_file_txt
+                            elif old_content_file_md.exists():
+                                old_content_file = old_content_file_md
+                                
+                            if old_content_file:
                                 with open(old_content_file, 'r', encoding='utf-8') as f:
                                     old_content = f.read()
                                 previous_context = previous_context.replace(
@@ -455,8 +374,16 @@ class ChapterExpander:
                                 )
                     
                     # 添加新章节到上下文
-                    new_content_file = output_dir / f"chapter_{chapter_num:02d}.md"
-                    if new_content_file.exists():
+                    new_content_file_txt = output_dir / f"chapter_{chapter_num:02d}.txt"
+                    new_content_file_md = output_dir / f"chapter_{chapter_num:02d}.md"
+                    
+                    new_content_file = None
+                    if new_content_file_txt.exists():
+                        new_content_file = new_content_file_txt
+                    elif new_content_file_md.exists():
+                        new_content_file = new_content_file_md
+                        
+                    if new_content_file:
                         with open(new_content_file, 'r', encoding='utf-8') as f:
                             new_content = f.read()
                         previous_context += f"\n\n=== 第{chapter_num}章 ===\n{new_content}"

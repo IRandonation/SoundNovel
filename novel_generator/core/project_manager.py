@@ -108,8 +108,7 @@ class ProjectManager:
                 "outline_dir": "02_outline/",
                 "draft_dir": "03_draft/",
                 "prompt_dir": "04_prompt/",
-                "log_dir": "06_log/",
-                "novel_dir": "07_novel/"
+                "log_dir": "06_log/"
             }
         }
         

@@ -19,16 +19,29 @@ def resolve_path(path):
     return os.path.join(basedir, path)
 
 if __name__ == "__main__":
-    # Ensure we can find the app
-    app_path = resolve_path("gui_app.py")
-    
-    # Set up arguments for streamlit
-    sys.argv = [
-        "streamlit",
-        "run",
-        app_path,
-        "--global.developmentMode=false",
-    ]
-    
-    # Run streamlit
-    sys.exit(stcli.main())
+    try:
+        # Ensure we can find the app
+        app_path = resolve_path("gui_app.py")
+        
+        if not os.path.exists(app_path):
+            print(f"Error: Could not find app script at {app_path}")
+            input("Press Enter to exit...")
+            sys.exit(1)
+
+        # Set up arguments for streamlit
+        sys.argv = [
+            "streamlit",
+            "run",
+            app_path,
+            "--global.developmentMode=false",
+            "--server.headless=false",  # Ensure browser opens
+        ]
+        
+        # Run streamlit
+        sys.exit(stcli.main())
+    except Exception as e:
+        import traceback
+        print("An error occurred during startup:")
+        traceback.print_exc()
+        input("\nPress Enter to exit...")
+        sys.exit(1)

@@ -1,73 +1,71 @@
-# Architecture and Technical Details
+# 架构与技术细节
 
-## Overview
+## 概述
 
-SoundNovel is an AI-assisted novel writing agent designed to automate the pipeline from core settings to a complete novel draft. It leverages multiple Large Language Models (LLMs) to ensure logical consistency, plot progression, and stylistic coherence across long narratives.
+SoundNovel 是一个 AI 辅助小说写作助手，旨在自动化从核心设定到完整小说草稿的创作流程。它利用多个大语言模型（LLM）来确保长篇叙事中的逻辑一致性、情节推进和风格统一。
 
-## System Architecture
+## 系统架构
 
-The system is organized into a modular architecture:
+系统采用模块化架构组织：
 
-### 1. Core Package (`novel_generator/`)
+### 1. 核心包 (`novel_generator/`)
 
-This is the heart of the application, containing the business logic and core functionalities.
+这是应用程序的核心，包含业务逻辑和核心功能。
 
 - **`core/`**:
-  - **`project_manager.py`**: Orchestrates the initialization and validation of the project structure.
-  - **`outline_generator.py`**: Handles the generation of chapter outlines from the overall outline and core settings.
-  - **`batch_outline_generator.py`**: Manages the bulk generation of outlines, handling pagination and context.
-  - **`chapter_expander.py`**: Responsible for expanding chapter outlines into full drafts, ensuring adherence to style guides.
-  - **`sliding_window.py`**: Implements the sliding window context mechanism to maintain continuity across chapters.
+  - [project_manager.py](file:///d:/Project/SoundNovel/novel_generator/core/project_manager.py): 负责项目结构的初始化和验证。
+  - [outline_generator.py](file:///d:/Project/SoundNovel/novel_generator/core/outline_generator.py): 处理从整体大纲和核心设定生成章节大纲的逻辑。
+  - [batch_outline_generator.py](file:///d:/Project/SoundNovel/novel_generator/core/batch_outline_generator.py): 管理大纲的批量生成，处理分页和上下文。
+  - [chapter_expander.py](file:///d:/Project/SoundNovel/novel_generator/core/chapter_expander.py): 负责将章节大纲扩展为完整正文，确保符合风格指南。
+  - [sliding_window.py](file:///d:/Project/SoundNovel/novel_generator/core/sliding_window.py): 实现滑动窗口上下文机制，以维持章节间的连贯性。
 
 - **`utils/`**:
-  - **`multi_model_client.py`**: A robust client for interacting with various LLM providers (ZhipuAI, Doubao, Ark). It handles model routing, retries, and fallbacks.
-  - **`file_handler.py`**: Utilities for safe file reading, writing, and backup management.
-  - **`logger.py`**: centralized logging configuration.
+  - [multi_model_client.py](file:///d:/Project/SoundNovel/novel_generator/utils/multi_model_client.py): 一个强大的客户端，用于与各种 LLM 提供商（智谱AI、豆包、Ark）进行交互。处理模型路由、重试和降级。
+  - [file_handler.py](file:///d:/Project/SoundNovel/novel_generator/utils/file_handler.py): 用于安全文件读取、写入和备份管理的工具。
+  - [logger.py](file:///d:/Project/SoundNovel/novel_generator/utils/logger.py): 集中化的日志配置。
 
 - **`config/`**:
-  - **`settings.py`**: Defines configuration schemas (using dataclasses) for API keys, paths, and generation parameters.
+  - [settings.py](file:///d:/Project/SoundNovel/novel_generator/config/settings.py): 定义 API 密钥、路径和生成参数的配置架构（使用 dataclasses）。
 
-### 2. Interface Layer
+### 2. 接口层
 
-- **CLI (`05_script/main.py`)**: The command-line interface for running the generation pipeline (init, outline, expand).
-- **GUI (`gui_app.py`)**: A Streamlit-based graphical user interface for a more interactive experience.
-- **Scripts (`05_script/`)**:
-  - `expand_chapters.py`: Standalone script for expanding specific chapters or ranges.
-  - `merge_drafts.py`: Utility to merge generated drafts into a single manuscript.
+- **命令行界面 (CLI) ([main.py](file:///d:/Project/SoundNovel/05_script/main.py))**: 用于运行生成流水线（初始化、大纲、扩写）的命令行接口。
+- **图形用户界面 (GUI) ([gui_app.py](file:///d:/Project/SoundNovel/gui_app.py))**: 基于 Streamlit 的图形界面，提供更直观的交互体验。
+- **脚本 (`05_script/`)**:
+  - [expand_chapters.py](file:///d:/Project/SoundNovel/05_script/expand_chapters.py): 用于扩写特定章节或范围的独立脚本。
 
-### 3. Data Flow
+### 3. 数据流
 
-1.  **Input**: User provides `core_setting.yaml` (world-building, characters) and `overall_outline.yaml` (plot beats).
-2.  **Outline Generation**: The system breaks down the overall outline into chapter-level outlines (`02_outline/`).
-3.  **Expansion**: Using a sliding window context (previous N chapters' summaries), the system expands each chapter outline into a draft (`03_draft/`).
-4.  **Output**: Drafts are merged into a final document (`07_output/`).
+1.  **输入**: 用户提供 `01_source/core_setting.yaml`（世界观、人物）和 `01_source/overall_outline.yaml`（情节节奏）。
+2.  **大纲生成**: 系统将整体大纲分解为章节级大纲（存储在 `02_outline/`）。
+3.  **正文扩写**: 使用滑动窗口上下文（前 N 章的摘要），系统将每个章节大纲扩展为正文草稿（存储在 `03_draft/`）。
 
-## Technical Key Points
+## 技术要点
 
-### Sliding Window Context
-To solve the context limit problem in long novels, the system uses a sliding window approach. When generating Chapter N, it feeds the summaries and key events of Chapters N-k to N-1 into the model. This ensures the AI remembers immediate history without exceeding token limits.
+### 滑动窗口上下文
+为了解决长篇小说中的上下文限制问题，系统采用了滑动窗口方法。在生成第 N 章时，它会将第 N-k 到 N-1 章的摘要和关键事件输入模型。这确保了 AI 能够记住近期的历史，而不会超过 Token 限制。
 
-### Multi-Model Strategy
-The system supports switching between different models for different tasks:
-- **Logic/Planning**: Uses "Long" context models (e.g., GLM-4-Long) for high-level outlining and consistency checks.
-- **Drafting**: Uses faster, cost-effective models (e.g., GLM-4.5-Flash) for text expansion.
+### 多模型策略
+系统支持为不同任务切换不同的模型：
+- **逻辑/规划**: 使用“长文本”模型（如 GLM-4-Long）进行高层级的大纲规划和一致性检查。
+- **正文创作**: 使用更快速、更具成本效益的模型（如 GLM-4.5-Flash）进行正文扩写。
 
-### Error Handling & Recovery
-- **API Retries**: Built-in exponential backoff for API failures.
-- **State Preservation**: Progress is saved after each chapter. If a batch fails, it can resume from the last successful chapter.
-- **Backups**: Every overwrite operation triggers an automatic backup to `_history/` folders.
+### 错误处理与恢复
+- **API 重试**: 内置针对 API 失败的指数退避机制。
+- **状态保存**: 每章生成后都会保存进度。如果批量任务失败，可以从最后一个成功的章节恢复。
+- **备份**: 每次覆盖操作都会触发自动备份到 `_history/` 文件夹。
 
-## Directory Structure Rationale
+## 目录结构说明
 
-- **`01_source/`**: Human-written creative input.
-- **`02_outline/`**: AI-generated structural intermediate.
-- **`03_draft/`**: AI-generated raw content.
-- **`04_prompt/`**: Prompt engineering templates.
-- **`05_script/`**: Operational scripts.
-- **`06_log/`**: Observability and debugging.
+- **`01_source/`**: 人工编写的创作输入。
+- **`02_outline/`**: AI 生成的结构化中间件。
+- **`03_draft/`**: AI 生成的原始正文内容。
+- **`04_prompt/`**: 提示词工程模板。
+- **`05_script/`**: 运行脚本。
+- **`06_log/`**: 观测与调试日志。
 
-## Security & Privacy
+## 安全与隐私
 
-- **Sensitive Data**: API keys are stored in `05_script/config.json`, which is git-ignored.
-- **Environment**: Support for `.env` files and environment variables.
-- **Logs**: API logs are separated to avoid accidental exposure of content in system logs (though content logging should be disabled in production).
+- **敏感数据**: API 密钥存储在 `05_script/config.json` 中，该文件已被 git 忽略。
+- **环境**: 支持 `.env` 文件和环境变量。
+- **日志**: API 日志是分离的，以避免在系统日志中意外泄露内容。

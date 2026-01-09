@@ -102,9 +102,17 @@ class SlidingWindow:
         draft_path = Path(draft_dir)
         
         for chapter_num in chapter_numbers:
-            chapter_file = draft_path / f"chapter_{chapter_num:02d}.md"
+            # 优先查找 .txt 文件，兼容 .md 文件
+            txt_file = draft_path / f"chapter_{chapter_num:02d}.txt"
+            md_file = draft_path / f"chapter_{chapter_num:02d}.md"
             
-            if chapter_file.exists():
+            chapter_file = None
+            if txt_file.exists():
+                chapter_file = txt_file
+            elif md_file.exists():
+                chapter_file = md_file
+            
+            if chapter_file:
                 try:
                     with open(chapter_file, 'r', encoding='utf-8') as f:
                         content = f.read()
@@ -116,7 +124,7 @@ class SlidingWindow:
                 except Exception as e:
                     self.logger.warning(f"读取第{chapter_num}章失败: {e}")
             else:
-                self.logger.warning(f"第{chapter_num}章文件不存在: {chapter_file}")
+                self.logger.warning(f"第{chapter_num}章文件不存在 (检查了 .txt 和 .md)")
         
         return "\n\n".join(context_parts)
     
@@ -405,6 +413,10 @@ class SlidingWindow:
             bool: 是否检测到断裂
         """
         try:
+            # 如果前序上下文为空（可能是首次运行或缓存未命中），则认为没有断裂
+            if not previous_context:
+                return False
+
             # 计算相似度
             similarity = self.get_context_similarity(current_context, previous_context)
             
@@ -459,18 +471,20 @@ class SlidingWindow:
         Returns:
             List[int]: 可用章节号列表
         """
-        available_chapters = []
+        available_chapters = set()
         draft_path = Path(draft_dir)
         
-        for file_path in draft_path.glob("chapter_*.md"):
-            try:
-                # 从文件名提取章节号
-                chapter_num = int(file_path.stem.split('_')[1])
-                available_chapters.append(chapter_num)
-            except (IndexError, ValueError):
-                continue
+        # 查找所有 .txt 和 .md 文件
+        for pattern in ["chapter_*.txt", "chapter_*.md"]:
+            for file_path in draft_path.glob(pattern):
+                try:
+                    # 从文件名提取章节号
+                    chapter_num = int(file_path.stem.split('_')[1])
+                    available_chapters.add(chapter_num)
+                except (IndexError, ValueError):
+                    continue
         
-        return sorted(available_chapters)
+        return sorted(list(available_chapters))
     
     def clear_cache(self):
         """清除上下文缓存"""

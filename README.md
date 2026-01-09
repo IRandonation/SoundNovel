@@ -20,9 +20,8 @@ SoundNovel/
 ├── 02_outline/                # [生成] 章节大纲
 ├── 03_draft/                  # [生成] 章节草稿
 ├── 04_prompt/                 # 提示词模板与风格指南
-├── 05_script/                 # 脚本入口 (main.py, expand_chapters.py, merge_drafts.py)
+├── 05_script/                 # 脚本入口 (main.py, expand_chapters.py)
 ├── 06_log/                    # [生成] 日志目录
-├── 07_output/                 # [生成] 最终合并的成品
 ├── novel_generator/           # 核心代码包
 ├── gui_app.py                 # GUI 启动入口
 ├── pyproject.toml             # 依赖声明
@@ -69,9 +68,6 @@ uv run python 05_script/main.py
 
 # 扩写章节 (例如第 1 章)
 uv run python 05_script/expand_chapters.py --chapter 1
-
-# 合并草稿
-uv run python 05_script/merge_drafts.py
 ```
 
 **GUI 方式**:
@@ -83,7 +79,7 @@ uv run streamlit run gui_app.py
 
 - 所有 API Key 存储在 `05_script/config.json` 中。
 - `05_script/config.json` 已被加入 `.gitignore`，**请勿将其提交到版本控制系统**。
-- 生成的内容（`02_outline`, `03_draft`, `07_output`）默认不提交，如需保存请手动管理。
+- 生成的内容（`02_outline`, `03_draft`）默认不提交，如需保存请手动管理。
 
 ## 许可证
 
