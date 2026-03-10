@@ -24,6 +24,9 @@ from novel_generator.core.chapter_expander import ChapterExpander
 from novel_generator.utils.multi_model_client import MultiModelClient
 from novel_generator.core.sliding_window import ContextManager
 
+# 注意：GUI 使用自己独立的 load_config 函数
+# 这是为了处理 Streamlit/PyInstaller 的特殊路径需求
+# CLI 工具使用 novel_generator.utils.common.load_config()
 def load_config():
     config_path = project_root / "05_script" / "config.json"
     if config_path.exists():

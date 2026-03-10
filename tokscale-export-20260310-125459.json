@@ -1,0 +1,152 @@
+{
+  "daily": [
+    {
+      "cost": 0.2054882,
+      "date": "2026-03-05",
+      "tokens": {
+        "cacheRead": 79488,
+        "cacheWrite": 0,
+        "input": 161789,
+        "output": 8688,
+        "total": 249965
+      }
+    },
+    {
+      "cost": 0.4209102099999999,
+      "date": "2026-03-04",
+      "tokens": {
+        "cacheRead": 1402559,
+        "cacheWrite": 188953,
+        "input": 275392,
+        "output": 17958,
+        "total": 1884862
+      }
+    },
+    {
+      "cost": 4.1135174,
+      "date": "2026-03-03",
+      "tokens": {
+        "cacheRead": 31962729,
+        "cacheWrite": 2108033,
+        "input": 547563,
+        "output": 114848,
+        "total": 34735803
+      }
+    },
+    {
+      "cost": 0.14478640000000004,
+      "date": "2026-03-02",
+      "tokens": {
+        "cacheRead": 1021280,
+        "cacheWrite": 59061,
+        "input": 34969,
+        "output": 5211,
+        "total": 1120521
+      }
+    }
+  ],
+  "models": [
+    {
+      "client": "opencode",
+      "cost": 3.875278399999999,
+      "model": "big-pickle",
+      "provider": "opencode",
+      "sessionCount": 4,
+      "tokens": {
+        "cacheRead": 31693140,
+        "cacheWrite": 1869957,
+        "input": 300814,
+        "output": 94793,
+        "total": 33958704
+      }
+    },
+    {
+      "client": "opencode",
+      "cost": 0.4327879999999999,
+      "model": "glm-5",
+      "provider": "zai",
+      "sessionCount": 2,
+      "tokens": {
+        "cacheRead": 283008,
+        "cacheWrite": 0,
+        "input": 339156,
+        "output": 11572,
+        "total": 633736
+      }
+    },
+    {
+      "client": "opencode",
+      "cost": 0.26099543999999997,
+      "model": "minimax-m2.5-free",
+      "provider": "opencode",
+      "sessionCount": 12,
+      "tokens": {
+        "cacheRead": 752923,
+        "cacheWrite": 283986,
+        "input": 217494,
+        "output": 27777,
+        "total": 1282180
+      }
+    },
+    {
+      "client": "opencode",
+      "cost": 0.18021284,
+      "model": "coding-glm-4.7-free",
+      "provider": "aihubmix",
+      "sessionCount": 1,
+      "tokens": {
+        "cacheRead": 894944,
+        "cacheWrite": 0,
+        "input": 108426,
+        "output": 4967,
+        "total": 1010967
+      }
+    },
+    {
+      "client": "opencode",
+      "cost": 0.13542753000000002,
+      "model": "minimax-m2.5",
+      "provider": "minimax-cn",
+      "sessionCount": 2,
+      "tokens": {
+        "cacheRead": 842041,
+        "cacheWrite": 202104,
+        "input": 53823,
+        "output": 7596,
+        "total": 1105564
+      }
+    },
+    {
+      "client": "opencode",
+      "cost": 0.0,
+      "model": "claude-opus-4-6",
+      "provider": "aihubmix",
+      "sessionCount": 1,
+      "tokens": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0,
+        "total": 0
+      }
+    },
+    {
+      "client": "opencode",
+      "cost": 0.0,
+      "model": "coding-minimax-m2.1-free",
+      "provider": "aihubmix",
+      "sessionCount": 1,
+      "tokens": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0,
+        "total": 0
+      }
+    }
+  ],
+  "totals": {
+    "cost": 4.88470221,
+    "tokens": 37991151
+  }
+}
