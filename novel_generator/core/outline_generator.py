@@ -4,6 +4,7 @@
 """
 
 import json
+import re
 import yaml
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -12,6 +13,10 @@ import logging
 
 from novel_generator.config.settings import Settings
 from novel_generator.utils.multi_model_client import MultiModelClient
+
+
+class RetryableGenerationError(Exception):
+    pass
 
 
 class OutlineGenerator:
@@ -175,9 +180,6 @@ class OutlineGenerator:
                 if act_content:
                     # 从幕的内容中提取章节数量
                     # 支持多种格式："第1-15章"、"第 1-15 章"、"第1章到第15章"等
-                    import re
-                    
-                    # 尝试匹配章节数量
                     chapter_patterns = [
                         r'第\s*(\d+)\s*-\s*(\d+)\s*章',  # 第1-15章
                         r'第\s*(\d+)\s*章\s*到\s*第\s*(\d+)\s*章',  # 第1章到第15章
@@ -231,16 +233,16 @@ class OutlineGenerator:
             response = self.multi_model_client.chat_completion(messages=messages)
             
             if not response:
-                self.logger.warning("AI API返回空响应，使用模拟数据")
-                return self._get_mock_response()
+                raise RetryableGenerationError("AI API返回空响应，可重试")
             
             self.logger.info("AI API调用成功")
             return response
             
+        except RetryableGenerationError:
+            raise
         except Exception as e:
             self.logger.error(f"AI API调用失败: {e}")
-            self.logger.info("使用模拟数据作为备用方案")
-            return self._get_mock_response()
+            raise RetryableGenerationError(f"AI API调用失败，可重试: {e}") from e
     
     def _get_mock_response(self) -> str:
         """获取模拟响应（用于测试）"""
@@ -382,6 +384,12 @@ class OutlineGenerator:
             str: 实际保存路径
         """
         try:
+            core_setting = self._load_core_setting()
+            self._validate_outline(outline)
+            outline = self.optimize_outline(outline, core_setting)
+            outline = self._check_foreshadowing_consistency(outline, core_setting)
+            outline = self._check_pacing(outline)
+
             output_file = Path(output_path)
             
             # 备份现有文件
@@ -477,29 +485,98 @@ class OutlineGenerator:
                                    core_setting: Dict[str, Any]) -> Dict[str, Any]:
         """检查人物一致性"""
         characters = core_setting.get('人物小传', {})
-        
+        known_names = [str(name).strip() for name in characters.keys() if str(name).strip()]
+
         for chapter, content in outline.items():
-            # 这里可以添加人物一致性检查逻辑
-            pass
+            chapter_text = " ".join([
+                str(content.get('核心事件', '')),
+                str(content.get('人物行动', '')),
+                str(content.get('伏笔回收', ''))
+            ])
+            if not known_names:
+                continue
+
+            mentioned = [name for name in known_names if name in chapter_text]
+            if not mentioned:
+                content['一致性提示'] = "未检测到核心人物，建议补充人物行为与动机"
+            elif len(mentioned) > 4:
+                content['一致性提示'] = f"出场人物较多({len(mentioned)}位)，注意控制叙事焦点"
         
         return outline
     
-    def _check_foreshadowing_consistency(self, outline: Dict[str, Any]) -> Dict[str, Any]:
+    def _check_foreshadowing_consistency(self, outline: Dict[str, Any],
+                                         core_setting: Dict[str, Any]) -> Dict[str, Any]:
         """检查伏笔连贯性"""
-        # 收集所有伏笔回收
-        foreshadowing = []
-        
-        for chapter, content in outline.items():
-            foreshadowing.extend(content.get('伏笔回收', '').split(', '))
-        
-        # 检查伏笔是否合理
-        # 这里可以添加具体的检查逻辑
+        foreshadowing_plan = core_setting.get('伏笔清单', [])
+        planned_keywords: List[str] = []
+        if isinstance(foreshadowing_plan, list):
+            for item in foreshadowing_plan:
+                text = str(item).strip()
+                if text:
+                    planned_keywords.append(text[:18])
+
+        seen: Dict[str, int] = {}
+        for _, content in outline.items():
+            raw_value = str(content.get('伏笔回收', '')).strip()
+            if not raw_value or raw_value == "无":
+                continue
+            tokens = [token.strip() for token in re.split(r'[,，；;、]', raw_value) if token.strip()]
+            normalized_tokens = []
+            for token in tokens:
+                if len(token) > 18:
+                    normalized_tokens.append(token[:18])
+                else:
+                    normalized_tokens.append(token)
+            for token in normalized_tokens:
+                seen[token] = seen.get(token, 0) + 1
+            duplicate = [token for token in normalized_tokens if seen.get(token, 0) > 2]
+            if duplicate:
+                content['伏笔提示'] = f"伏笔项重复回收偏多: {', '.join(sorted(set(duplicate))[:3])}"
+            if planned_keywords:
+                hit = any(plan in raw_value for plan in planned_keywords)
+                if not hit and '伏笔提示' not in content:
+                    content['伏笔提示'] = "当前伏笔回收与设定清单关联较弱"
         
         return outline
     
     def _check_pacing(self, outline: Dict[str, Any]) -> Dict[str, Any]:
         """检查节奏合理性"""
-        # 检查章节节奏
-        # 这里可以添加节奏检查逻辑
+        ordered_chapters = sorted(
+            outline.items(),
+            key=lambda item: self._extract_chapter_number(item[0])
+        )
+        previous_target = None
+        for _, content in ordered_chapters:
+            current_target = self._extract_target_word_count(content.get('字数目标', 1500))
+            if previous_target and previous_target > 0:
+                ratio = current_target / previous_target
+                if ratio >= 1.8:
+                    content['节奏提示'] = f"字数目标增幅较大({previous_target}->{current_target})"
+                elif ratio <= 0.55:
+                    content['节奏提示'] = f"字数目标降幅较大({previous_target}->{current_target})"
+            previous_target = current_target
         
         return outline
+
+    def _extract_target_word_count(self, raw_value: Any) -> int:
+        if isinstance(raw_value, int):
+            return raw_value
+        matched = re.search(r'(\d+)', str(raw_value))
+        if matched:
+            return int(matched.group(1))
+        return 1500
+
+    def _extract_chapter_number(self, chapter_key: str) -> int:
+        matched = re.search(r'(\d+)', str(chapter_key))
+        if matched:
+            return int(matched.group(1))
+        return 99999
+
+    def _load_core_setting(self) -> Dict[str, Any]:
+        try:
+            core_setting_path = Path(self.settings.path_config.core_setting_file)
+            with open(core_setting_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+                return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}

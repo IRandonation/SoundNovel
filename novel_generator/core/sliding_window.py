@@ -5,6 +5,7 @@
 
 import json
 import yaml
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
@@ -100,6 +101,7 @@ class SlidingWindow:
         """
         context_parts = []
         draft_path = Path(draft_dir)
+        latest_chapter = chapter_numbers[-1] if chapter_numbers else None
         
         for chapter_num in chapter_numbers:
             # 优先查找 .txt 文件，兼容 .md 文件
@@ -118,7 +120,12 @@ class SlidingWindow:
                         content = f.read()
                     
                     # 提取关键信息
-                    key_info = self._extract_key_info(content, chapter_num, draft_dir)
+                    key_info = self._extract_key_info(
+                        content=content,
+                        chapter_num=chapter_num,
+                        draft_dir=draft_dir,
+                        include_recent_summary=(chapter_num == latest_chapter)
+                    )
                     context_parts.append(key_info)
                     
                 except Exception as e:
@@ -128,7 +135,8 @@ class SlidingWindow:
         
         return "\n\n".join(context_parts)
     
-    def _extract_key_info(self, content: str, chapter_num: int, draft_dir: str = None) -> str:
+    def _extract_key_info(self, content: str, chapter_num: int, draft_dir: str = None,
+                          include_recent_summary: bool = False) -> str:
         """
         从章节内容中提取关键信息
         
@@ -140,21 +148,39 @@ class SlidingWindow:
         Returns:
             str: 关键信息
         """
-        # 1. 尝试读取已存在的摘要文件
+        state_card = {}
+        summary_text = ""
+
+        if draft_dir:
+            state_path = Path(draft_dir) / f"chapter_{chapter_num:02d}.state.yaml"
+            if state_path.exists():
+                try:
+                    with open(state_path, 'r', encoding='utf-8') as f:
+                        loaded = yaml.safe_load(f)
+                        if isinstance(loaded, dict):
+                            state_card = loaded
+                except Exception as e:
+                    self.logger.warning(f"读取状态卡失败: {e}")
+
         if draft_dir:
             summary_path = Path(draft_dir) / f"chapter_{chapter_num:02d}.summary"
             if summary_path.exists():
                 try:
                     with open(summary_path, 'r', encoding='utf-8') as f:
-                        return f.read()
+                        summary_text = f.read().strip()
                 except Exception as e:
                     self.logger.warning(f"读取摘要文件失败: {e}")
 
-        # 2. 如果有 LLM 客户端，使用 LLM 生成摘要
+        if state_card:
+            return self._format_context_from_state_card(
+                chapter_num=chapter_num,
+                state_card=state_card,
+                summary_text=summary_text if include_recent_summary else ""
+            )
+
         if self.multi_model_client:
             summary = self._generate_llm_summary(content, chapter_num)
             if summary:
-                # 保存摘要
                 if draft_dir:
                     try:
                         summary_path = Path(draft_dir) / f"chapter_{chapter_num:02d}.summary"
@@ -164,8 +190,9 @@ class SlidingWindow:
                         self.logger.warning(f"保存摘要文件失败: {e}")
                 return summary
 
-        # 3. 降级方案：使用关键词提取
-        # 提取章节标题（如果有）
+        if summary_text:
+            return summary_text
+
         title = ""
         lines = content.split('\n')
         for line in lines:
@@ -173,11 +200,9 @@ class SlidingWindow:
                 title = line.strip()
                 break
         
-        # 提取主要人物和事件
         key_events = []
         key_characters = []
         
-        # 简单的关键词提取（实际应用中可以使用更复杂的NLP技术）
         event_keywords = ['发现', '遇到', '决定', '前往', '战斗', '学习', '获得', '失去']
         character_keywords = ['主角', '李明', '老者', '母亲', '朋友', '敌人']
         
@@ -186,19 +211,16 @@ class SlidingWindow:
             if not line:
                 continue
                 
-            # 检测事件关键词
             for keyword in event_keywords:
                 if keyword in line:
                     key_events.append(line)
                     break
             
-            # 检测人物关键词
             for keyword in character_keywords:
                 if keyword in line:
                     key_characters.append(line)
                     break
         
-        # 构建关键信息
         key_info = f"=== 第{chapter_num}章 {title} ===\n"
         
         if key_characters:
@@ -207,12 +229,44 @@ class SlidingWindow:
         if key_events:
             key_info += f"关键事件: {'；'.join(key_events[:3])}\n"
         
-        # 添加章节开头和结尾
         if lines:
             key_info += f"章节开头: {lines[0][:50]}...\n"
             key_info += f"章节结尾: {lines[-1][:50]}...\n"
         
         return key_info
+
+    def _format_context_from_state_card(self, chapter_num: int,
+                                        state_card: Dict[str, Any],
+                                        summary_text: str = "") -> str:
+        title = str(state_card.get("章节标题", f"第{chapter_num}章")).strip()
+        chapter_summary = str(state_card.get("章节摘要", "")).strip()
+        time_info = str(state_card.get("时间", "未明确")).strip()
+        location_info = str(state_card.get("地点", "未明确")).strip()
+        people_state = self._stringify_list(state_card.get("人物状态", []))
+        props_state = self._stringify_list(state_card.get("道具变动", []))
+        suspense = self._stringify_list(state_card.get("悬念", []))
+
+        parts = [
+            f"=== 第{chapter_num}章 状态卡 ===",
+            f"标题: {title}",
+            f"时间: {time_info}",
+            f"地点: {location_info}",
+            f"人物状态: {people_state if people_state else '无'}",
+            f"道具变动: {props_state if props_state else '无'}",
+            f"悬念: {suspense if suspense else '无'}"
+        ]
+        if chapter_summary:
+            parts.append(f"摘要: {chapter_summary}")
+        if summary_text:
+            parts.append(f"最近正文摘要: {summary_text[:320]}")
+        return "\n".join(parts)
+
+    def _stringify_list(self, value: Any) -> str:
+        if isinstance(value, list):
+            return "；".join([str(item).strip() for item in value if str(item).strip()])
+        if isinstance(value, str):
+            return "；".join([item.strip() for item in re.split(r'[，,；;\n、]', value) if item.strip()])
+        return ""
     
     def _generate_llm_summary(self, content: str, chapter_num: int) -> str:
         """使用 LLM 生成章节摘要"""

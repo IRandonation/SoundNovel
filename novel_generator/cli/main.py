@@ -72,6 +72,11 @@ def create_parser() -> argparse.ArgumentParser:
         type=str,
         help='项目根目录路径（默认: 当前目录）'
     )
+    init_parser.add_argument(
+        '--skip-config',
+        action='store_true',
+        help='跳过交互式 API 配置向导'
+    )
     init_parser.set_defaults(func=commands.init)
     
     # outline 命令

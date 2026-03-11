@@ -178,7 +178,6 @@ def main():
             if st.button("🧪 测试模型连接", help="测试当前配置的 API Key 和模型是否可用"):
                 try:
                     with st.spinner("正在连接模型服务器..."):
-                        # Initialize client with current config
                         client = MultiModelClient(config)
                         results = client.test_all_connections()
                         
@@ -196,7 +195,54 @@ def main():
                 except Exception as e:
                     st.error(f"测试过程发生错误: {str(e)}")
 
-        
+        with st.expander("🚀 项目初始化", expanded=False):
+            st.caption("配置 API 连接并测试")
+            
+            init_provider = st.selectbox(
+                "选择服务商",
+                ["智谱 AI (ZhipuAI)", "豆包 (Doubao)"],
+                key="init_provider_select"
+            )
+            
+            if "智谱" in init_provider:
+                init_api_key = st.text_input("API Key", type="password", key="init_zhipu_key")
+                init_api_url = st.text_input(
+                    "API 地址（可选）",
+                    value="https://open.bigmodel.cn/api/paas/v4",
+                    key="init_zhipu_url"
+                )
+                init_endpoint = None
+            else:
+                init_api_key = st.text_input("API Key", type="password", key="init_doubao_key")
+                init_api_url = st.text_input(
+                    "API 地址（可选）",
+                    value="https://ark.cn-beijing.volces.com/api/v3",
+                    key="init_doubao_url"
+                )
+                init_endpoint = st.text_input("Endpoint ID", key="init_doubao_endpoint", placeholder="ep-2024xxxx")
+            
+            if st.button("💾 保存并测试连接", key="init_save_test"):
+                if not init_api_key:
+                    st.error("请输入 API Key")
+                else:
+                    with st.spinner("正在测试连接..."):
+                        from novel_generator.core.project_manager import ProjectManager
+                        manager = ProjectManager(str(project_root))
+                        
+                        provider_code = "zhipu" if "智谱" in init_provider else "doubao"
+                        success, message = manager.update_api_config(
+                            provider=provider_code,
+                            api_key=init_api_key,
+                            api_url=init_api_url if init_api_url else None,
+                            endpoint=init_endpoint
+                        )
+                        
+                        if success:
+                            st.success(f"✅ {message}")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {message}")
+
         st.info(f"当前工作目录: {project_root}")
 
     # Tabs

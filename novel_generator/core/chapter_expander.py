@@ -5,6 +5,7 @@
 
 import json
 import yaml
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
@@ -12,6 +13,10 @@ import logging
 
 from novel_generator.config.settings import Settings
 from novel_generator.utils.multi_model_client import MultiModelClient
+
+
+class RetryableGenerationError(Exception):
+    pass
 
 
 class ChapterExpander:
@@ -66,7 +71,11 @@ class ChapterExpander:
             response = self._call_ai_api(prompt)
             
             # 解析和优化响应
-            content = self._parse_and_optimize_response(response, chapter_outline)
+            content = self._parse_and_optimize_response(
+                response=response,
+                chapter_outline=chapter_outline,
+                style_guide=style_guide or {}
+            )
             
             self.logger.info(f"第{chapter_num}章扩写完成")
             return content
@@ -164,7 +173,10 @@ class ChapterExpander:
     
     def _call_ai_api(self, prompt: str) -> str:
         """调用AI API (Legacy wrapper)"""
-        return self.multi_model_client.chat_completion(messages=[{"role": "user", "content": prompt}])
+        try:
+            return self.multi_model_client.chat_completion(messages=[{"role": "user", "content": prompt}])
+        except Exception as e:
+            raise RetryableGenerationError(f"AI调用失败，可重试: {e}") from e
     
     def _get_mock_response(self) -> str:
         """获取模拟响应（用于测试）"""
@@ -207,17 +219,41 @@ class ChapterExpander:
 """
     
     def _parse_and_optimize_response(self, response: str,
-                                   chapter_outline: Dict[str, Any]) -> str:
+                                   chapter_outline: Dict[str, Any],
+                                   style_guide: Dict[str, Any]) -> str:
         """解析和优化AI响应"""
         try:
             # 基本清理
             content = response.strip()
-            
-            # 简单的字数检查作为兜底
-            word_count = len(content)
-            target_count = self.settings.get_default_word_count()
-            if word_count < target_count * 0.6: # 放宽限制到60%
-                self.logger.warning(f"内容字数偏少：{word_count} < {target_count}")
+
+            quality_result = self._evaluate_rule_quality(content, chapter_outline, style_guide)
+            min_score = float(self.config.get('quality_gate', {}).get('min_score', 70))
+            self.logger.info(
+                f"规则评分: {quality_result['score']:.1f} / 100, "
+                f"硬门槛通过: {quality_result['hard_pass']}"
+            )
+            if quality_result['soft_issues']:
+                self.logger.warning("软性建议: " + "；".join(quality_result['soft_issues']))
+
+            rewrite_needed = (not quality_result['hard_pass']) or quality_result['score'] < min_score
+            if rewrite_needed:
+                issue_text = quality_result['hard_issues'] if quality_result['hard_issues'] else quality_result['soft_issues']
+                self.logger.warning("质量未达标，尝试自动重写一次: " + "；".join(issue_text[:5]))
+                repaired_content = self._repair_content_once(
+                    content=content,
+                    chapter_outline=chapter_outline,
+                    style_guide=style_guide,
+                    hard_issues=quality_result['hard_issues'] if quality_result['hard_issues'] else quality_result['soft_issues']
+                )
+                if repaired_content:
+                    repaired_result = self._evaluate_rule_quality(repaired_content, chapter_outline, style_guide)
+                    if repaired_result['score'] >= quality_result['score']:
+                        content = repaired_content
+                        quality_result = repaired_result
+                        self.logger.info(
+                            f"自动修复后规则评分: {quality_result['score']:.1f} / 100, "
+                            f"硬门槛通过: {quality_result['hard_pass']}"
+                        )
 
             # 优化内容
             content = self._optimize_content(content)
@@ -238,6 +274,126 @@ class ChapterExpander:
         """优化内容"""
         # 这里可以添加内容优化逻辑
         return content
+
+    def _evaluate_rule_quality(self, content: str,
+                               chapter_outline: Dict[str, Any],
+                               style_guide: Dict[str, Any]) -> Dict[str, Any]:
+        """规则评分（硬门槛 + 软评分）"""
+        target_count = self._get_target_word_count(chapter_outline)
+        content_length = len(content)
+        hard_issues: List[str] = []
+        soft_issues: List[str] = []
+        score = 100.0
+
+        min_ratio = self.config.get('quality_gate', {}).get('min_ratio', 0.55)
+        max_ratio = self.config.get('quality_gate', {}).get('max_ratio', 1.90)
+
+        if target_count > 0:
+            min_count = int(target_count * min_ratio)
+            max_count = int(target_count * max_ratio)
+            if content_length < min_count:
+                hard_issues.append(f"字数偏少({content_length} < {min_count})")
+            elif content_length < int(target_count * 0.8):
+                soft_issues.append(f"字数略少({content_length} / 目标{target_count})")
+                score -= 12
+            elif content_length > max_count:
+                hard_issues.append(f"字数过多({content_length} > {max_count})")
+            elif content_length > int(target_count * 1.3):
+                soft_issues.append(f"字数略多({content_length} / 目标{target_count})")
+                score -= 8
+
+        paragraphs = [line for line in content.splitlines() if line.strip()]
+        if len(paragraphs) < 3:
+            hard_issues.append("有效段落少于3段")
+        elif len(paragraphs) < 5:
+            soft_issues.append("段落偏少，可增加节奏变化")
+            score -= 6
+
+        core_event = str(chapter_outline.get('核心事件', '')).strip()
+        if core_event:
+            key_tokens = [token for token in re.split(r'[，。；、\s]+', core_event) if len(token) >= 2]
+            if key_tokens:
+                hit_count = sum(1 for token in key_tokens[:5] if token in content)
+                if hit_count == 0:
+                    soft_issues.append("核心事件关联词命中不足")
+                    score -= 10
+                elif hit_count <= 1:
+                    soft_issues.append("核心事件展开可再加强")
+                    score -= 5
+
+        banned_words = self._get_banned_words(style_guide)
+        hit_banned = [word for word in banned_words if word and word in content]
+        if hit_banned:
+            soft_issues.append(f"命中禁忌词: {', '.join(hit_banned[:5])}")
+            score -= min(18, 4 * len(hit_banned))
+
+        if re.search(r'([！？。])\1{2,}', content):
+            soft_issues.append("存在连续重复标点")
+            score -= 5
+
+        score = max(0.0, min(100.0, score))
+        return {
+            "hard_pass": len(hard_issues) == 0,
+            "hard_issues": hard_issues,
+            "soft_issues": soft_issues,
+            "score": score
+        }
+
+    def _repair_content_once(self, content: str,
+                             chapter_outline: Dict[str, Any],
+                             style_guide: Dict[str, Any],
+                             hard_issues: List[str]) -> str:
+        """基于硬门槛问题执行一次自动修复"""
+        try:
+            prompt = f"""请对以下小说章节进行一次修订，修复硬性问题，并保持原剧情不变。
+
+【硬性问题】
+{'; '.join(hard_issues)}
+
+【章节大纲】
+{json.dumps(chapter_outline, ensure_ascii=False)}
+
+【风格约束】
+{self._format_style_guide(style_guide)}
+
+【原始正文】
+{content}
+
+【修订要求】
+1. 保留原有剧情走向与人物关系。
+2. 仅修复硬性问题，不要改成摘要。
+3. 输出仅正文，不要解释。"""
+            return self._call_ai_api(prompt).strip()
+        except Exception as e:
+            self.logger.warning(f"自动修复失败: {e}")
+            return ""
+
+    def _get_target_word_count(self, chapter_outline: Dict[str, Any]) -> int:
+        """从章节大纲中提取目标字数"""
+        raw_value = chapter_outline.get('字数目标', self.settings.get_default_word_count())
+        if isinstance(raw_value, int):
+            return raw_value
+        if isinstance(raw_value, str):
+            matched = re.search(r'(\d+)', raw_value)
+            if matched:
+                return int(matched.group(1))
+        return self.settings.get_default_word_count()
+
+    def _get_banned_words(self, style_guide: Dict[str, Any]) -> List[str]:
+        """获取禁忌词列表（优先使用配置，其次使用默认词）"""
+        configured_words = self.config.get('quality_gate', {}).get('banned_words', [])
+        if isinstance(configured_words, list) and configured_words:
+            return [str(word).strip() for word in configured_words if str(word).strip()]
+
+        default_words = [
+            "复杂的思绪", "难以言喻", "命运的齿轮", "心中五味杂陈",
+            "一种莫名的", "仿佛", "似乎", "这一刻"
+        ]
+        guide_words: List[str] = []
+        for key, value in style_guide.items():
+            if "禁" in str(key) and isinstance(value, str):
+                guide_words.extend([w.strip() for w in re.split(r'[，,；;、\n]', value) if w.strip()])
+        return list(dict.fromkeys(default_words + guide_words))
 
     def save_chapter(self, chapter_num: int, content: str, 
                     output_dir: str, backup: bool = True) -> str:
@@ -270,6 +426,17 @@ class ChapterExpander:
             # 保存新文件
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(content)
+
+            state_card = self._generate_state_card(chapter_num, content)
+            state_path = output_path.parent / f"chapter_{chapter_num:02d}.state.yaml"
+            with open(state_path, 'w', encoding='utf-8') as f:
+                yaml.dump(state_card, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+
+            summary_text = str(state_card.get("章节摘要", "")).strip()
+            if summary_text:
+                summary_path = output_path.parent / f"chapter_{chapter_num:02d}.summary"
+                with open(summary_path, 'w', encoding='utf-8') as f:
+                    f.write(f"=== 第{chapter_num}章 剧情状态卡 ===\n{summary_text}")
             
             self.logger.info(f"章节文件保存成功: {output_path}")
             return str(output_path)
@@ -296,6 +463,87 @@ class ChapterExpander:
         cleaned_lines = [line for line in lines if line.strip()]
         # 用单个换行符连接，形成紧凑的文本块
         return '\n'.join(cleaned_lines)
+
+    def _generate_state_card(self, chapter_num: int, content: str) -> Dict[str, Any]:
+        snippet = content[:2600] if len(content) > 2600 else content
+        try:
+            prompt = f"""请为小说第{chapter_num}章生成结构化剧情状态卡。
+仅输出YAML，字段固定为：
+章节标题:
+章节摘要:
+时间:
+地点:
+人物状态:
+道具变动:
+悬念:
+
+其中“人物状态/道具变动/悬念”必须是列表。
+
+原文：
+{snippet}"""
+            response = self.multi_model_client.chat_completion(
+                stage='stage1',
+                messages=[
+                    {'role': 'system', 'content': '你是小说连续性分析助手，擅长提取结构化状态信息。'},
+                    {'role': 'user', 'content': prompt}
+                ]
+            )
+            cleaned = self._clean_yaml_response(response)
+            parsed = yaml.safe_load(cleaned)
+            if isinstance(parsed, dict):
+                return self._normalize_state_card(parsed, chapter_num)
+        except Exception as e:
+            self.logger.warning(f"生成状态卡失败: {e}")
+        return self._fallback_state_card(chapter_num, content)
+
+    def _clean_yaml_response(self, response: str) -> str:
+        lines = response.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            if line.strip() in ['```yaml', '```yml', '```']:
+                continue
+            cleaned_lines.append(line)
+        return '\n'.join(cleaned_lines).strip()
+
+    def _normalize_state_card(self, state_card: Dict[str, Any], chapter_num: int) -> Dict[str, Any]:
+        normalized = {
+            "章节标题": str(state_card.get("章节标题", f"第{chapter_num}章")).strip(),
+            "章节摘要": str(state_card.get("章节摘要", "")).strip(),
+            "时间": str(state_card.get("时间", "未明确")).strip(),
+            "地点": str(state_card.get("地点", "未明确")).strip(),
+            "人物状态": self._ensure_list(state_card.get("人物状态", [])),
+            "道具变动": self._ensure_list(state_card.get("道具变动", [])),
+            "悬念": self._ensure_list(state_card.get("悬念", []))
+        }
+        if not normalized["章节摘要"]:
+            normalized["章节摘要"] = self._fallback_summary_text(chapter_num, "")
+        return normalized
+
+    def _ensure_list(self, value: Any) -> List[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            return [item.strip() for item in re.split(r'[，,；;\n、]', value) if item.strip()]
+        return []
+
+    def _fallback_summary_text(self, chapter_num: int, content: str) -> str:
+        text = content.replace('\n', ' ').strip()
+        if not text:
+            return f"第{chapter_num}章主要情节待补充。"
+        if len(text) > 180:
+            return text[:180] + "..."
+        return text
+
+    def _fallback_state_card(self, chapter_num: int, content: str) -> Dict[str, Any]:
+        return {
+            "章节标题": f"第{chapter_num}章",
+            "章节摘要": self._fallback_summary_text(chapter_num, content),
+            "时间": "未明确",
+            "地点": "未明确",
+            "人物状态": [],
+            "道具变动": [],
+            "悬念": []
+        }
 
     
     def _backup_chapter(self, file_path: Path, chapter_num: int) -> str:

@@ -257,6 +257,29 @@ class ChapterExpander:
 - **项目设置**: `novel_generator/config/settings.py`（数据类）
 - **依赖**: `pyproject.toml`
 
+### API 配置方式
+
+**方式一：CLI 初始化时交互式配置（推荐）**
+
+```bash
+# 运行 init 命令时会提示输入 API Key
+python soundnovel.py cli init
+
+# 如需跳过交互式配置
+python soundnovel.py cli init --skip-config
+```
+
+**方式二：GUI 界面配置**
+
+在 GUI 左侧边栏的「项目初始化」面板中：
+1. 选择服务商（智谱/豆包）
+2. 输入 API Key
+3. 点击「保存并测试连接」
+
+**方式三：手动编辑配置文件**
+
+直接编辑 `05_script/config.json` 文件。
+
 ### 环境变量
 
 支持的环境变量：
@@ -283,14 +306,17 @@ SoundNovel/
 ├── 02_outline/                # 生成的章节大纲
 ├── 03_draft/                  # 生成的章节草稿
 ├── 04_prompt/                 # 提示词模板和风格指南
-├── 05_script/                 # 脚本入口（main.py、expand_chapters.py）
+├── 05_script/                 # 配置文件（config.json）
 ├── 06_log/                    # 日志文件
 ├── novel_generator/           # 核心包
+│   ├── cli/                   # CLI 命令模块
 │   ├── core/                  # 核心业务逻辑
 │   ├── config/                # 配置（数据类）
 │   ├── utils/                 # 工具（API 客户端、日志、文件处理）
 │   └── templates/             # 模板文件
+├── soundnovel.py              # 统一入口
 ├── gui_app.py                 # Streamlit GUI 入口
+├── build_exe.py               # 打包脚本
 ├── pyproject.toml             # 依赖
 └── uv.lock                    # 依赖锁定文件
 ```
@@ -301,7 +327,7 @@ SoundNovel/
 
 1. **新 API 模型**: 添加到 `novel_generator/utils/multi_model_client.py`
 2. **新配置选项**: 添加到 `novel_generator/config/settings.py` 数据类
-3. **新 CLI 命令**: 添加到 `05_script/main.py` 或创建新脚本
+3. **新 CLI 命令**: 添加到 `novel_generator/cli/commands/` 目录
 4. **新提示词模板**: 在 `04_prompt/` 添加 YAML 文件
 
 如有疑问，请遵循代码库中的现有模式。

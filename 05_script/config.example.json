@@ -1,20 +1,27 @@
 {
-  "api_key": "YOUR_ZHIPU_API_KEY",
+  "api_key": "",
   "api_base_url": "https://open.bigmodel.cn/api/paas/v4",
-  "doubao_api_key": "YOUR_DOUBAO_API_KEY",
-  "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-  "ark_api_key": "YOUR_ARK_API_KEY",
+  "doubao_api_key": "",
+  "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+  "ark_api_key": "",
   "models": {
     "logic_analysis_model": "glm-4-long",
     "major_chapters_model": "glm-4-long",
     "sub_chapters_model": "glm-4-long",
-    "expansion_model": "glm-4-long",
+    "expansion_model": "glm-4.5-flash",
     "default_model": "glm-4.5-flash"
+  },
+  "doubao_models": {
+    "logic_analysis_model": "",
+    "major_chapters_model": "",
+    "sub_chapters_model": "",
+    "expansion_model": "",
+    "default_model": ""
   },
   "default_model": "zhipu",
   "available_models": ["zhipu", "doubao", "ark"],
   "max_tokens": 4000,
-  "temperature": 0.6,
+  "temperature": 0.7,
   "top_p": 0.7,
   "system": {
     "api": { "max_retries": 5, "retry_delay": 2, "timeout": 60 },
@@ -28,14 +35,13 @@
     "log_dir": "06_log/"
   },
   "novel_generation": {
-    "stage1_use_long_model": true,
-    "stage2_use_long_model": true,
-    "stage3_use_regular_model": true,
-    "stage4_use_regular_model": true,
-    "stage5_use_regular_model": true,
     "context_chapters": 10,
-    "default_word_count": 1500,
-    "copyright_bypass": true,
-    "world_style": ""
+    "default_word_count": 1500
+  },
+  "quality_gate": {
+    "min_ratio": 0.55,
+    "max_ratio": 1.9,
+    "min_score": 70,
+    "banned_words": ["复杂的思绪", "难以言喻", "命运的齿轮", "心中五味杂陈", "一种莫名的", "仿佛", "似乎", "这一刻"]
   }
 }
