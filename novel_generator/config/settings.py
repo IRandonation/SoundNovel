@@ -9,6 +9,89 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Dict, Any, Optional, List
+
+
+@dataclass
+class AIRoleConfig:
+    provider: str = "zhipu"
+    model: str = ""
+    temperature: float = 0.7
+    top_p: float = 0.9
+    max_tokens: int = 8000
+    system_prompt: str = ""
+    enabled: bool = True
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "max_tokens": self.max_tokens,
+            "system_prompt": self.system_prompt,
+            "enabled": self.enabled
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AIRoleConfig":
+        return cls(
+            provider=data.get("provider", "zhipu"),
+            model=data.get("model", ""),
+            temperature=data.get("temperature", 0.7),
+            top_p=data.get("top_p", 0.9),
+            max_tokens=data.get("max_tokens", 8000),
+            system_prompt=data.get("system_prompt", ""),
+            enabled=data.get("enabled", True)
+        )
+
+
+@dataclass
+class AIRolesConfig:
+    generator: AIRoleConfig = field(default_factory=lambda: AIRoleConfig(
+        provider="zhipu", model="glm-4.5-flash", temperature=0.7, top_p=0.9, max_tokens=8000
+    ))
+    reviewer: AIRoleConfig = field(default_factory=lambda: AIRoleConfig(
+        provider="deepseek", model="deepseek-chat", temperature=0.3, top_p=0.7, max_tokens=4000
+    ))
+    refiner: AIRoleConfig = field(default_factory=lambda: AIRoleConfig(
+        provider="zhipu", model="glm-4-long", temperature=0.5, top_p=0.8, max_tokens=8000
+    ))
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "generator": self.generator.to_dict(),
+            "reviewer": self.reviewer.to_dict(),
+            "refiner": self.refiner.to_dict()
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AIRolesConfig":
+        config = cls()
+        if "generator" in data:
+            config.generator = AIRoleConfig.from_dict(data["generator"])
+        if "reviewer" in data:
+            config.reviewer = AIRoleConfig.from_dict(data["reviewer"])
+        if "refiner" in data:
+            config.refiner = AIRoleConfig.from_dict(data["refiner"])
+        return config
+    
+    def get_role_config(self, role_name: str) -> AIRoleConfig:
+        if role_name == "generator":
+            return self.generator
+        elif role_name == "reviewer":
+            return self.reviewer
+        elif role_name == "refiner":
+            return self.refiner
+        return self.generator
+    
+    def set_role_config(self, role_name: str, config: AIRoleConfig):
+        if role_name == "generator":
+            self.generator = config
+        elif role_name == "reviewer":
+            self.reviewer = config
+        elif role_name == "refiner":
+            self.refiner = config
 
 
 @dataclass
@@ -25,15 +108,15 @@ class APIConfig:
         "default_model": "glm-4.5-flash"
     })
     
-    # 豆包配置
+# 豆包配置
     doubao_api_key: str = ""
     doubao_api_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     doubao_models: Dict[str, str] = field(default_factory=lambda: {
-        "logic_analysis_model": "ep-20241210233657-lz8fv",
-        "major_chapters_model": "ep-20241210233657-lz8fv",
-        "sub_chapters_model": "ep-20241210233657-lz8fv",
-        "expansion_model": "ep-20241210233657-lz8fv",
-        "default_model": "ep-20241210233657-lz8fv"
+        "logic_analysis_model": "doubao-1-5-lite-32k-250115",
+        "major_chapters_model": "doubao-1-5-lite-32k-250115",
+        "sub_chapters_model": "doubao-1-5-lite-32k-250115",
+        "expansion_model": "doubao-1-5-lite-32k-250115",
+        "default_model": "doubao-1-5-lite-32k-250115"
     })
     
     # 火山引擎Ark配置
@@ -46,12 +129,23 @@ class APIConfig:
         "default_model": "ep-20241210233657-lz8fv"
     })
     
+    # DeepSeek配置
+    deepseek_api_key: str = ""
+    deepseek_api_base_url: str = "https://api.deepseek.com"
+    deepseek_models: Dict[str, str] = field(default_factory=lambda: {
+        "logic_analysis_model": "deepseek-chat",
+        "major_chapters_model": "deepseek-chat",
+        "sub_chapters_model": "deepseek-chat",
+        "expansion_model": "deepseek-chat",
+        "default_model": "deepseek-chat"
+    })
+    
     # 多模型配置
     default_model: str = "zhipu"  # 默认使用智谱AI
-    available_models: List[str] = field(default_factory=lambda: ["zhipu", "doubao", "ark"])
+    available_models: List[str] = field(default_factory=lambda: ["zhipu", "doubao", "ark", "deepseek"])
     
     # 通用配置
-    max_tokens: int = 4000
+    max_tokens: int = 8000
     temperature: float = 0.7
     top_p: float = 0.7
     max_retries: int = 5
@@ -99,16 +193,11 @@ class Settings:
     """配置管理器"""
     
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
-        """
-        初始化配置管理器
-        
-        Args:
-            config_dict: 配置字典
-        """
         self.api_config = APIConfig()
         self.system_config = SystemConfig()
         self.path_config = PathConfig()
         self.generation_config = GenerationConfig()
+        self.ai_roles_config = AIRolesConfig()
         
         if config_dict:
             self.load_from_dict(config_dict)
@@ -136,6 +225,14 @@ class Settings:
             self.api_config.ark_api_key = config_dict["ark_api_key"]
         if "ark_models" in config_dict:
             self.api_config.ark_models.update(config_dict["ark_models"])
+        
+        # 加载DeepSeek配置
+        if "deepseek_api_key" in config_dict:
+            self.api_config.deepseek_api_key = config_dict["deepseek_api_key"]
+        if "deepseek_api_base_url" in config_dict:
+            self.api_config.deepseek_api_base_url = config_dict["deepseek_api_base_url"]
+        if "deepseek_models" in config_dict:
+            self.api_config.deepseek_models.update(config_dict["deepseek_models"])
         
         # 加载多模型配置
         if "default_model" in config_dict:
@@ -202,6 +299,9 @@ class Settings:
                 self.generation_config.copyright_bypass = gen_config["copyright_bypass"]
             if "world_style" in gen_config:
                 self.generation_config.world_style = gen_config["world_style"]
+        
+        if "ai_roles" in config_dict:
+            self.ai_roles_config = AIRolesConfig.from_dict(config_dict["ai_roles"])
     
     def load_from_file(self, file_path: str):
         """
@@ -248,6 +348,11 @@ class Settings:
             "ark_api_key": self.api_config.ark_api_key,
             "ark_models": self.api_config.ark_models,
             
+            # DeepSeek配置
+            "deepseek_api_key": self.api_config.deepseek_api_key,
+            "deepseek_api_base_url": self.api_config.deepseek_api_base_url,
+            "deepseek_models": self.api_config.deepseek_models,
+            
             # 多模型配置
             "default_model": self.api_config.default_model,
             "available_models": self.api_config.available_models,
@@ -284,17 +389,21 @@ class Settings:
                 "default_word_count": self.generation_config.default_word_count,
                 "copyright_bypass": self.generation_config.copyright_bypass,
                 "world_style": self.generation_config.world_style
-            }
+            },
+            "ai_roles": self.ai_roles_config.to_dict()
         }
     
     def validate(self) -> bool:
         """验证配置有效性"""
-        # 验证API配置
-        if not self.api_config.api_key:
-            raise Exception("API密钥未配置")
+        has_valid_api = (
+            self.api_config.api_key or
+            self.api_config.doubao_api_key or
+            self.api_config.ark_api_key or
+            self.api_config.deepseek_api_key
+        )
         
-        if not self.api_config.api_base_url:
-            raise Exception("API基础URL未配置")
+        if not has_valid_api:
+            raise Exception("API密钥未配置（请配置智谱/豆包/Ark 任一服务商的API密钥）")
         
         # 验证路径配置
         if not self.path_config.core_setting_file:
@@ -303,15 +412,6 @@ class Settings:
         return True
     
     def get_api_model(self, stage: str) -> str:
-        """
-        获取指定阶段的API模型
-        
-        Args:
-            stage: 阶段名称
-            
-        Returns:
-            str: 模型名称
-        """
         stage_mapping = {
             "stage1": "logic_analysis_model",
             "stage2": "major_chapters_model", 
@@ -321,7 +421,13 @@ class Settings:
         }
         
         model_key = stage_mapping.get(stage, "default_model")
-        return self.api_config.models.get(model_key, self.api_config.models["default_model"])
+        
+        if self.api_config.doubao_api_key:
+            return self.api_config.doubao_models.get(model_key, self.api_config.doubao_models.get("default_model", "doubao-1-5-lite-32k-250115"))
+        elif self.api_config.ark_api_key:
+            return self.api_config.ark_models.get(model_key, self.api_config.ark_models.get("default_model", "doubao-1-5-lite-32k-250115"))
+        else:
+            return self.api_config.models.get(model_key, self.api_config.models.get("default_model", "glm-4.5-flash"))
     
     def get_context_chapters(self) -> int:
         """获取上下文章节数"""
@@ -370,26 +476,37 @@ def create_default_config() -> Dict[str, Any]:
         "doubao_api_key": "请在此处填写豆包API密钥",
         "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
         "doubao_models": {
-            "logic_analysis_model": "ep-20241210233657-lz8fv",
-            "major_chapters_model": "ep-20241210233657-lz8fv",
-            "sub_chapters_model": "ep-20241210233657-lz8fv",
-            "expansion_model": "ep-20241210233657-lz8fv",
-            "default_model": "ep-20241210233657-lz8fv"
+            "logic_analysis_model": "doubao-1-5-lite-32k-250115",
+            "major_chapters_model": "doubao-1-5-lite-32k-250115",
+            "sub_chapters_model": "doubao-1-5-lite-32k-250115",
+            "expansion_model": "doubao-1-5-lite-32k-250115",
+            "default_model": "doubao-1-5-lite-32k-250115"
         },
         
-        # Ark配置
+# Ark配置
         "ark_api_key": "请在此处填写Ark API密钥或设置ARK_API_KEY环境变量",
         "ark_models": {
-            "logic_analysis_model": "ep-20241210233657-lz8fv",
-            "major_chapters_model": "ep-20241210233657-lz8fv",
-            "sub_chapters_model": "ep-20241210233657-lz8fv",
-            "expansion_model": "ep-20241210233657-lz8fv",
-            "default_model": "ep-20241210233657-lz8fv"
+            "logic_analysis_model": "doubao-1-5-lite-32k-250115",
+            "major_chapters_model": "doubao-1-5-lite-32k-250115",
+            "sub_chapters_model": "doubao-1-5-lite-32k-250115",
+            "expansion_model": "doubao-1-5-lite-32k-250115",
+            "default_model": "doubao-1-5-lite-32k-250115"
+        },
+        
+        # DeepSeek配置
+        "deepseek_api_key": "请在此处填写DeepSeek API密钥或设置DEEPSEEK_API_KEY环境变量",
+        "deepseek_api_base_url": "https://api.deepseek.com",
+        "deepseek_models": {
+            "logic_analysis_model": "deepseek-chat",
+            "major_chapters_model": "deepseek-chat",
+            "sub_chapters_model": "deepseek-chat",
+            "expansion_model": "deepseek-chat",
+            "default_model": "deepseek-chat"
         },
         
         # 多模型配置
         "default_model": "zhipu",
-        "available_models": ["zhipu", "doubao", "ark"],
+        "available_models": ["zhipu", "doubao", "ark", "deepseek"],
         
         # 通用配置
         "max_tokens": 4000,
@@ -423,5 +540,34 @@ def create_default_config() -> Dict[str, Any]:
             "default_word_count": 1500,
             "copyright_bypass": True,
             "world_style": ""
+        },
+        "ai_roles": {
+            "generator": {
+                "provider": "zhipu",
+                "model": "glm-4.5-flash",
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_tokens": 8000,
+                "system_prompt": "你是一个专业的小说创作助手，擅长根据大纲和设定生成引人入胜的章节内容。",
+                "enabled": True
+            },
+            "reviewer": {
+                "provider": "deepseek",
+                "model": "deepseek-chat",
+                "temperature": 0.3,
+                "top_p": 0.7,
+                "max_tokens": 4000,
+                "system_prompt": "你是一个专业的文学编辑和评审专家，擅长分析小说内容的情节逻辑和连贯性。",
+                "enabled": True
+            },
+            "refiner": {
+                "provider": "zhipu",
+                "model": "glm-4-long",
+                "temperature": 0.5,
+                "top_p": 0.8,
+                "max_tokens": 8000,
+                "system_prompt": "你是一个专业的文字润色专家，擅长优化句子结构和表达方式。",
+                "enabled": True
+            }
         }
     }

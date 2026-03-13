@@ -88,8 +88,8 @@ def create_parser() -> argparse.ArgumentParser:
     outline_parser.add_argument(
         '--config', '-c',
         type=str,
-        default='05_script/config.json',
-        help='配置文件路径（默认: 05_script/config.json）'
+        default='05_script/session.json',
+        help='配置文件路径（默认: 05_script/session.json）'
     )
     outline_parser.add_argument(
         '--output', '-o',
@@ -99,8 +99,8 @@ def create_parser() -> argparse.ArgumentParser:
     outline_parser.add_argument(
         '--batch-size', '-b',
         type=int,
-        default=15,
-        help='每批生成章节数（默认: 15）'
+        default=None,
+        help='每批生成章节数（默认: 从 session.json 读取，初始值 15）'
     )
     outline_parser.add_argument(
         '--start', '-s',
@@ -123,8 +123,8 @@ def create_parser() -> argparse.ArgumentParser:
     expand_parser.add_argument(
         '--config', '-c',
         type=str,
-        default='05_script/config.json',
-        help='配置文件路径（默认: 05_script/config.json）'
+        default='05_script/session.json',
+        help='配置文件路径（默认: 05_script/session.json）'
     )
     expand_parser.add_argument(
         '--outline-file', '-f',
@@ -147,11 +147,40 @@ def create_parser() -> argparse.ArgumentParser:
         help='结束章节号（与--start配合使用）'
     )
     expand_parser.add_argument(
+        '--from-last',
+        action='store_true',
+        help='从上次结束的章节继续'
+    )
+    expand_parser.add_argument(
         '--interactive', '-i',
         action='store_true',
         help='强制交互模式'
     )
     expand_parser.set_defaults(func=commands.expand)
+    
+    # status 命令
+    status_parser = subparsers.add_parser(
+        'status',
+        help='查看项目状态',
+        description='显示当前项目的生成进度和配置状态'
+    )
+    status_parser.set_defaults(func=commands.status)
+    
+    # continue 命令
+    continue_parser = subparsers.add_parser(
+        'continue',
+        help='续写章节',
+        description='从上次结束的章节继续生成'
+    )
+    continue_parser.add_argument(
+        '--end', '-e',
+        type=int,
+        help='结束章节号（默认: 总章节数）'
+    )
+    continue_parser.set_defaults(func=commands.continue_write)
+    
+    from novel_generator.cli.commands.settings_cmd import add_parser as add_settings_parser
+    add_settings_parser(subparsers)
     
     return parser
 

@@ -1,0 +1,95 @@
+name: "chapter_generation"
+
+writing_rules:
+  - id: "no_repeat"
+    priority: 1
+    text: "禁止重复前文"
+  - id: "show_not_tell"
+    priority: 2
+    text: "展示而非讲述：用具体动作代替情绪标签"
+  - id: "ending_landing"
+    priority: 3
+    text: "结尾落地：结尾落在感官细节上，禁止总结升华"
+  - id: "word_count"
+    priority: 4
+    text: "字数要求：目标字数±100字"
+
+banned_words:
+  emotion:
+    - "五味杂陈"
+    - "百感交集"
+    - "莫名的"
+    - "一种复杂的"
+    - "难以言喻"
+    - "心中涌起"
+    - "心下了然"
+    - "若有所思"
+    - "不由得"
+    - "情不自禁"
+  action:
+    - "微微点头"
+    - "轻叹一声"
+    - "微微一笑"
+    - "眼神闪了闪"
+    - "嘴角上扬"
+    - "眉头微皱"
+    - "眼眶微红"
+  structure:
+    - "就在这时"
+    - "突然之间"
+    - "与此同时"
+    - "命运的齿轮"
+    - "这一刻"
+
+negative_examples:
+  - error: "他心中五味杂陈，一种莫名的悲伤涌上心头"
+    correct: "他死死攥着那枚龙鳞，边缘陷进肉里，血顺着指缝滴下"
+  - error: "两人展开了激烈的战斗，你来我往，难分难解"
+    correct: "铁链划过地面，带起一串火星。他肩膀撞进对方怀里，听到了肋骨折断的声音"
+  - error: "她脸红了，心跳加速，气氛变得暧昧"
+    correct: "她下意识往后缩了半寸，后背抵住冰冷的石墙，呼吸声变得异常清晰"
+
+template: |
+  【任务】撰写小说第{chapter_num}章正文
+  
+  1. 核心设定：
+  {core_setting}
+  
+  2. 前文剧情摘要（已发生，不可重复）：
+  {previous_context}
+  
+  ⚠️ 以上是第{chapter_num}章之前已经发生的剧情，绝对不能重复！
+  
+  3. 本章大纲：
+  {chapter_outline}
+  
+  4. {character_context}
+  
+  5. {foreshadowing_context}
+  
+  6. {emotional_context}
+  
+  7. 风格要求：
+  {style_guide}
+  
+  【写作法则】
+  1. 禁止重复前文：前文剧情已经发生，本章必须是全新剧情推进
+  2. 展示而非讲述：用具体动作代替情绪标签
+  3. 结尾落地：结尾落在感官细节上，禁止总结升华
+  4. 字数要求：{word_count}字左右（误差±100字）
+  
+  【禁忌词】
+  禁止使用：五味杂陈、难以言喻、命运的齿轮、莫名的、不由得、微微一笑
+  
+  请直接输出章节正文内容。
+
+variables:
+  - chapter_num
+  - core_setting
+  - previous_context
+  - chapter_outline
+  - character_context
+  - foreshadowing_context
+  - emotional_context
+  - style_guide
+  - word_count

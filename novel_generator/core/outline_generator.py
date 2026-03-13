@@ -13,6 +13,7 @@ import logging
 
 from novel_generator.config.settings import Settings
 from novel_generator.utils.multi_model_client import MultiModelClient
+from novel_generator.core.ai_roles import AIRoleManager, AIRole
 
 
 class RetryableGenerationError(Exception):
@@ -23,21 +24,15 @@ class OutlineGenerator:
     """大纲生成器类"""
     
     def __init__(self, config: Dict[str, Any], multi_model_client: MultiModelClient = None):
-        """
-        初始化大纲生成器
-        
-        Args:
-            config: 配置信息
-            multi_model_client: 多模型客户端
-        """
         self.config = config
         self.settings = Settings(config)
         self.logger = logging.getLogger(__name__)
-        # 初始化AI API客户端
         if multi_model_client:
             self.multi_model_client = multi_model_client
         else:
             self.multi_model_client = MultiModelClient(config)
+        
+        self.ai_role_manager = AIRoleManager(config, self.multi_model_client)
         
     def generate_outline(self, core_setting: Dict[str, Any], 
                         overall_outline: Dict[str, Any],
@@ -78,7 +73,6 @@ class OutlineGenerator:
     def _build_outline_prompt(self, core_setting: Dict[str, Any],
                             overall_outline: Dict[str, Any],
                             chapter_range: tuple) -> str:
-        """构建大纲生成提示词"""
         
         prompt = f"""
 请根据以下信息生成详细的章节大纲：
@@ -89,113 +83,121 @@ class OutlineGenerator:
 主要人物：{self._format_characters(core_setting.get('人物小传', {}))}
 
 【整体大纲】
-# 动态构建所有幕的内容
 {self._build_acts_text(overall_outline)}
-
 
 关键转折点：{overall_outline.get('关键转折点', '')}
 
 【生成要求】
-请生成第{chapter_range[0]}-{chapter_range[1]}章的详细大纲，每章包含：
-- 标题：简洁明了，体现本章核心内容
-- 核心事件：本章必须发生的关键情节
-- 场景：地点+环境描述
-- 人物行动：主角/配角的核心动作
-- 伏笔回收：本章需呼应的伏笔（如无则写"无"）
-- 字数目标：1500字左右
+请生成第{chapter_range[0]}-{chapter_range[1]}章的详细大纲。
 
-【格式要求】
-请严格按照YAML格式输出，每章一个条目，键名为"第X章"。
+【输出格式】
+必须严格按以下YAML格式输出，不要添加任何额外说明文字：
+
+第1章:
+  标题: 章节标题
+  核心事件: 本章关键情节
+  场景: 地点和环境
+  人物行动: 角色的主要行为
+  伏笔回收: 无
+  字数目标: 1500
+
+第2章:
+  标题: 章节标题
+  核心事件: 本章关键情节
+  场景: 地点和环境
+  人物行动: 角色的主要行为
+  伏笔回收: 无
+  字数目标: 1500
+
+...（依此类推）
 """
         return prompt.strip()
     
     def _format_characters(self, characters: Dict[str, Any]) -> str:
-        """格式化人物信息"""
         result = []
         for name, info in characters.items():
             if isinstance(info, dict):
-                info_str = ", ".join([f"{k}: {v}" for k, v in info.items()])
+                info_parts = []
+                for k, v in info.items():
+                    if isinstance(v, str) and len(v) > 100:
+                        v = v[:100] + "..."
+                    info_parts.append(f"{k}: {v}")
+                info_str = ", ".join(info_parts[:3])
                 result.append(f"{name}({info_str})")
             else:
                 result.append(f"{name}: {info}")
-        return "; ".join(result)
+        return "; ".join(result[:5])
     
     def _build_acts_text(self, overall_outline: Dict[str, Any]) -> str:
-        """动态构建所有幕的内容文本"""
         acts_content = []
         act_number = 1
         
-        # 中文数字映射
         chinese_numbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
                           "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
         
         while True:
-            # 尝试数字格式（第1幕、第2幕等）
             act_key_numeric = f"第{act_number}幕"
             act_content = overall_outline.get(act_key_numeric, '')
             
-            # 如果数字格式没有找到，尝试中文格式（第一幕、第二幕等）
             if not act_content and act_number <= len(chinese_numbers):
                 act_key_chinese = f"第{chinese_numbers[act_number-1]}幕"
                 act_content = overall_outline.get(act_key_chinese, '')
             
             if act_content:
-                # 使用找到的键名作为显示名称
                 display_key = act_key_numeric if overall_outline.get(act_key_numeric) else act_key_chinese
-                acts_content.append(f"{display_key}：{act_content}")
+                
+                if isinstance(act_content, dict):
+                    chapter_range = act_content.get('章节范围', '')
+                    core_plot = act_content.get('核心剧情', '')
+                    act_text = f"{display_key}（{chapter_range}）\n{core_plot}"
+                else:
+                    act_text = f"{display_key}：{act_content}"
+                
+                acts_content.append(act_text)
                 act_number += 1
             else:
                 break
         
-        return '\n'.join(acts_content)
+        return '\n\n'.join(acts_content)
     
     def extract_total_chapters(self, overall_outline: Dict[str, Any]) -> int:
-        """
-        从整体大纲中提取总章节数量
-        
-        Args:
-            overall_outline: 整体大纲
-            
-        Returns:
-            int: 总章节数量
-        """
         try:
             total_chapters = 0
             act_number = 1
             
-            # 中文数字映射
             chinese_numbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
                               "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
             
             while True:
-                # 尝试数字格式（第1幕、第2幕等）
                 act_key_numeric = f"第{act_number}幕"
                 act_content = overall_outline.get(act_key_numeric, '')
                 
-                # 如果数字格式没有找到，尝试中文格式（第一幕、第二幕等）
                 if not act_content and act_number <= len(chinese_numbers):
                     act_key_chinese = f"第{chinese_numbers[act_number-1]}幕"
                     act_content = overall_outline.get(act_key_chinese, '')
                 
                 if act_content:
-                    # 从幕的内容中提取章节数量
-                    # 支持多种格式："第1-15章"、"第 1-15 章"、"第1章到第15章"等
+                    if isinstance(act_content, dict):
+                        chapter_range = act_content.get('章节范围', '')
+                        search_text = str(chapter_range)
+                    else:
+                        search_text = str(act_content)
+                    
                     chapter_patterns = [
-                        r'第\s*(\d+)\s*-\s*(\d+)\s*章',  # 第1-15章
-                        r'第\s*(\d+)\s*章\s*到\s*第\s*(\d+)\s*章',  # 第1章到第15章
-                        r'(\d+)\s*-\s*(\d+)\s*章',  # 1-15章
-                        r'第\s*(\d+)\s*章',  # 第1章（单章）
+                        r'第\s*(\d+)\s*-\s*(\d+)\s*章',
+                        r'第\s*(\d+)\s*章\s*到\s*第\s*(\d+)\s*章',
+                        r'(\d+)\s*-\s*(\d+)\s*章',
+                        r'第\s*(\d+)\s*章',
                     ]
                     
                     max_chapter_in_act = 0
                     for pattern in chapter_patterns:
-                        matches = re.findall(pattern, act_content)
+                        matches = re.findall(pattern, search_text)
                         for match in matches:
-                            if len(match) == 2:  # 范围格式
-                                start_chapter = int(match[0])
+                            if len(match) == 2:
                                 end_chapter = int(match[1])
                                 max_chapter_in_act = max(max_chapter_in_act, end_chapter)
-                            else:  # 单章格式
+                            else:
                                 chapter_num = int(match[0])
                                 max_chapter_in_act = max(max_chapter_in_act, chapter_num)
                     
@@ -206,7 +208,6 @@ class OutlineGenerator:
                 else:
                     break
             
-            # 如果没有找到章节数量，返回默认值
             if total_chapters == 0:
                 self.logger.warning("无法从整体大纲中提取章节数量，使用默认值150")
                 return 150
@@ -216,21 +217,20 @@ class OutlineGenerator:
             
         except Exception as e:
             self.logger.error(f"提取章节数量失败: {e}")
-            return 150  # 返回默认值
+            return 150
     
     def _call_ai_api(self, prompt: str) -> str:
         """调用AI API生成大纲"""
         try:
             self.logger.info("正在调用AI API生成章节大纲...")
             
-            messages = [
-                {'role': 'system', 'content': '你是一个专业的小说大纲策划师，擅长创作引人入胜的故事情节。'},
-                {'role': 'user', 'content': prompt}
-            ]
-            
-            # 使用 MultiModelClient 调用 AI
-            # 自动使用配置的 default_model
-            response = self.multi_model_client.chat_completion(messages=messages)
+            response = self.ai_role_manager.chat_completion(
+                role=AIRole.GENERATOR,
+                messages=[
+                    {'role': 'system', 'content': '你是一个专业的小说大纲策划师，擅长创作引人入胜的故事情节。'},
+                    {'role': 'user', 'content': prompt}
+                ]
+            )
             
             if not response:
                 raise RetryableGenerationError("AI API返回空响应，可重试")
@@ -265,24 +265,36 @@ class OutlineGenerator:
 """
     
     def _parse_response(self, response: str) -> Dict[str, Any]:
-        """解析AI响应"""
         try:
-            # 清理响应内容，移除可能的markdown代码块标记
             cleaned_response = self._clean_markdown_response(response)
             
-            # 尝试解析YAML
+            self.logger.debug(f"清理后的响应前500字符: {cleaned_response[:500]}")
+            
             outline = yaml.safe_load(cleaned_response)
             
-            # 如果解析结果是字符串，尝试进一步解析
             if isinstance(outline, str):
                 self.logger.warning("YAML解析返回字符串，尝试简单文本解析")
-                return self._simple_parse(cleaned_response)
+                result = self._simple_parse(cleaned_response)
+                if result:
+                    return result
+                self.logger.error(f"简单解析也失败，响应内容: {cleaned_response[:1000]}")
+                return {}
             
-            return outline
+            if isinstance(outline, dict):
+                if not outline:
+                    self.logger.warning("YAML解析返回空字典，尝试简单文本解析")
+                    return self._simple_parse(cleaned_response)
+                return outline
+            
+            self.logger.warning(f"YAML解析返回非预期类型: {type(outline)}")
+            return self._simple_parse(cleaned_response)
+            
+        except yaml.YAMLError as e:
+            self.logger.error(f"YAML解析错误: {e}")
+            return self._simple_parse(response)
         except Exception as e:
             self.logger.error(f"解析AI响应失败: {e}")
-            # 尝试简单的文本解析
-            return self._simple_parse(cleaned_response)
+            return self._simple_parse(response)
     
     def _clean_markdown_response(self, response: str) -> str:
         """清理Markdown格式的响应"""
@@ -303,25 +315,48 @@ class OutlineGenerator:
         return '\n'.join(cleaned_lines)
     
     def _simple_parse(self, response: str) -> Dict[str, Any]:
-        """简单的文本解析"""
         outline = {}
         lines = response.strip().split('\n')
         current_chapter = None
         
         for line in lines:
-            line = line.strip()
-            if line.startswith('第') and '章：' in line:
-                current_chapter = line.split('：')[0]
-                outline[current_chapter] = {}
-            elif line.startswith('- ') and current_chapter:
-                # 处理以 "- " 开头的行
-                content = line[2:]  # 移除 "- "
-                if '：' in content:
-                    key, value = content.split('：', 1)
-                    outline[current_chapter][key.strip()] = value.strip()
-                elif ':' in content:
-                    key, value = content.split(':', 1)
-                    outline[current_chapter][key.strip()] = value.strip()
+            stripped = line.strip()
+            
+            chapter_match = re.match(r'^第\s*(\d+)\s*章\s*[:：]?\s*(.*)$', stripped)
+            if chapter_match:
+                chapter_num = chapter_match.group(1)
+                current_chapter = f"第{chapter_num}章"
+                outline[current_chapter] = {
+                    '标题': chapter_match.group(2).strip() if chapter_match.group(2) else f"第{chapter_num}章",
+                    '核心事件': '',
+                    '场景': '',
+                    '人物行动': '',
+                    '伏笔回收': '',
+                    '字数目标': 1500
+                }
+                continue
+            
+            if current_chapter and stripped:
+                if stripped.startswith('- '):
+                    stripped = stripped[2:]
+                
+                field_match = re.match(r'^(标题|核心事件|场景|人物行动|伏笔回收|字数目标|目标字数|字数)[:：]\s*(.*)$', stripped)
+                if field_match:
+                    field_name = field_match.group(1)
+                    field_value = field_match.group(2).strip()
+                    
+                    if field_name in ['目标字数', '字数']:
+                        field_name = '字数目标'
+                        num_match = re.search(r'\d+', str(field_value))
+                        if num_match:
+                            field_value = int(num_match.group())
+                        else:
+                            field_value = 1500
+                    
+                    outline[current_chapter][field_name] = field_value
+        
+        if not outline:
+            self.logger.warning(f"简单解析未能提取任何章节，原始响应前500字符: {response[:500]}")
         
         return outline
     

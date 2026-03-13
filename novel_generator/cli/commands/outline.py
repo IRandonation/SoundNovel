@@ -16,6 +16,7 @@ sys.path.insert(0, str(project_root))
 from novel_generator.core.batch_outline_generator import BatchOutlineGenerator
 from novel_generator.core.outline_generator import OutlineGenerator
 from novel_generator.config.settings import Settings
+from novel_generator.config.session import SessionManager
 from novel_generator.utils.common import (
     load_config, load_core_setting, load_overall_outline,
     get_project_root, ensure_directories
@@ -41,15 +42,15 @@ def run(args: argparse.Namespace) -> int:
     print_info("🚀 开始生成章节大纲...")
     
     try:
-        # 加载配置
         config = load_config(args.config)
         print_info("配置加载完成")
         
-        # 验证配置
+        session_manager = SessionManager(str(get_project_root()))
+        gen_config = session_manager.state.generation_config
+        
         settings = Settings(config)
         settings.validate()
         
-        # 加载核心设定和整体大纲
         core_setting = load_core_setting()
         overall_outline = load_overall_outline()
         
@@ -63,29 +64,36 @@ def run(args: argparse.Namespace) -> int:
         
         print_info("核心设定和整体大纲加载完成")
         
-        # 确保输出目录存在
         ensure_directories()
         
-        # 创建大纲生成器
         batch_generator = BatchOutlineGenerator(config)
         outline_gen = OutlineGenerator(config)
         
-        # 自动提取总章节数
         total_chapters = outline_gen.extract_total_chapters(overall_outline)
         print_info(f"检测到总章节数: {total_chapters}")
         
-        # 确定生成范围
         start_ch = args.start if args.start else 1
         end_ch = args.end if args.end else total_chapters
+        
+        batch_size = args.batch_size if args.batch_size else gen_config.batch_size
         
         if start_ch < 1 or end_ch > total_chapters or start_ch > end_ch:
             print_error(f"无效的章节范围: {start_ch}-{end_ch} (有效范围: 1-{total_chapters})")
             return 1
         
         print_info(f"生成章节范围: 第{start_ch}章 - 第{end_ch}章")
-        print_info(f"批次大小: {args.batch_size}")
+        print_info(f"批次大小: {batch_size} (可通过 session.json 配置)")
+        print_info(f"上下文章节数: {gen_config.context_chapters}")
+        print_info(f"目标字数: {gen_config.default_word_count}")
         
-        # 生成大纲
+        if args.output:
+            output_path = Path(args.output)
+        else:
+            output_path = get_project_root() / "02_outline" / f"chapter_outline_{start_ch:03d}-{end_ch:03d}.yaml"
+        
+        print_info(f"输出文件: {output_path}")
+        print_info("💾 增量保存已启用（每批次自动保存）")
+        
         def progress_callback(current: int, total: int, message: str):
             percent = min(current / total, 1.0) if total > 0 else 0
             print(f"\r  进度: [{int(percent*100)}%] {message}", end='', flush=True)
@@ -94,22 +102,15 @@ def run(args: argparse.Namespace) -> int:
             core_setting=core_setting,
             overall_outline=overall_outline,
             total_chapters=total_chapters,
-            batch_size=args.batch_size,
+            batch_size=batch_size,
             start_chapter_idx=start_ch,
             end_chapter_idx=end_ch,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            output_path=str(output_path),
+            incremental_save=True
         )
         
-        print()  # 换行
-        
-        # 确定输出文件路径
-        if args.output:
-            output_path = Path(args.output)
-        else:
-            output_path = get_project_root() / "02_outline" / f"chapter_outline_{start_ch:03d}-{end_ch:03d}.yaml"
-        
-        # 保存大纲
-        batch_generator.save_batch_outline(outline, str(output_path))
+        print()
         
         print_success(f"大纲生成完成！已保存至: {output_path}")
         print()

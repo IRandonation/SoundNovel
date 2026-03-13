@@ -19,6 +19,12 @@ try:
 except ImportError:
     ARK_AVAILABLE = False
 
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
 from novel_generator.config.settings import Settings
 
 
@@ -272,6 +278,87 @@ class DoubaoClient(BaseModelClient):
             return False
 
 
+class DeepSeekClient(BaseModelClient):
+    """DeepSeek客户端"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+        self.settings = Settings(config)
+        
+        if not OPENAI_AVAILABLE:
+            raise Exception("openai 未安装，请先安装: pip install openai")
+        
+        # API配置
+        self.api_key = config.get('deepseek_api_key', os.environ.get("DEEPSEEK_API_KEY", ''))
+        self.base_url = config.get('deepseek_api_base_url', 'https://api.deepseek.com')
+        self.max_tokens = config.get('max_tokens', 8000)
+        self.temperature = config.get('temperature', 0.7)
+        self.top_p = config.get('top_p', 0.7)
+        
+        # 初始化OpenAI客户端
+        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        
+        # 请求配置
+        self.max_retries = config.get('system', {}).get('api', {}).get('max_retries', 5)
+        self.retry_delay = config.get('system', {}).get('api', {}).get('retry_delay', 2)
+        
+        # 限流配置
+        self.rate_limit_delay = 1.0
+        self.last_request_time = 0
+    
+    def _apply_rate_limit(self):
+        """应用限流"""
+        now = time.time()
+        time_since_last_request = now - self.last_request_time
+        
+        if time_since_last_request < self.rate_limit_delay:
+            sleep_time = self.rate_limit_delay - time_since_last_request
+            self.logger.debug(f"DeepSeek限流中，等待 {sleep_time:.2f} 秒")
+            time.sleep(sleep_time)
+        
+        self.last_request_time = time.time()
+    
+    def chat_completion(self, model: str, messages: List[Dict[str, str]], **kwargs) -> str:
+        """聊天补全"""
+        try:
+            self._apply_rate_limit()
+            
+            self.logger.info(f"发送DeepSeek API请求，模型: {model}")
+            
+            completion = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=kwargs.get('max_tokens', self.max_tokens),
+                temperature=kwargs.get('temperature', self.temperature),
+                top_p=kwargs.get('top_p', self.top_p),
+                stream=False
+            )
+            
+            self.logger.info("DeepSeek API请求成功")
+            return completion.choices[0].message.content
+            
+        except Exception as e:
+            raise Exception(f"DeepSeek聊天补全失败: {e}")
+    
+    def test_connection(self) -> bool:
+        """测试连接"""
+        try:
+            test_prompt = "请回复'连接成功'以确认API正常工作。"
+            
+            model = self.config.get('deepseek_models', {}).get('default_model', 'deepseek-chat')
+            
+            response = self.chat_completion(
+                model,
+                [
+                    {"role": "user", "content": test_prompt}
+                ]
+            )
+            return response == '连接成功'
+        except Exception as e:
+            print(f"DeepSeek连接测试失败: {e}")
+            return False
+
+
 class MultiModelClient:
     """多模型客户端管理器"""
     
@@ -289,7 +376,8 @@ class MultiModelClient:
         # 初始化各个模型客户端
         self.clients = {
             'zhipu': ZhipuAIClient(config),
-            'doubao': DoubaoClient(config)
+            'doubao': DoubaoClient(config),
+            'deepseek': DeepSeekClient(config) if OPENAI_AVAILABLE else None
         }
         
         # 默认使用的模型
@@ -310,6 +398,13 @@ class MultiModelClient:
                 'sub_chapters_model': 'doubao-seed-1-6-250615',
                 'expansion_model': 'doubao-seed-1-6-250615',
                 'default_model': 'doubao-seed-1-6-250615'
+            },
+            'deepseek': {
+                'logic_analysis_model': 'deepseek-chat',
+                'major_chapters_model': 'deepseek-chat',
+                'sub_chapters_model': 'deepseek-chat',
+                'expansion_model': 'deepseek-chat',
+                'default_model': 'deepseek-chat'
             }
         }
 
@@ -319,6 +414,9 @@ class MultiModelClient:
         
         if 'doubao_models' in config:
             self.model_mapping['doubao'].update(config['doubao_models'])
+        
+        if 'deepseek_models' in config:
+            self.model_mapping['deepseek'].update(config['deepseek_models'])
 
     
     def get_client(self, model_type: str = None) -> BaseModelClient:
@@ -368,6 +466,43 @@ class MultiModelClient:
             model = self.get_model_for_stage(model_type or self.default_model, stage)
         
         return client.chat_completion(model, messages, **kwargs)
+    
+    def chat_completion_with_role(
+        self,
+        role_config: Dict[str, Any],
+        messages: List[Dict[str, str]],
+        **kwargs
+    ) -> str:
+        """
+        使用角色配置进行聊天补全
+        
+        Args:
+            role_config: 角色配置，包含provider, model, temperature等
+            messages: 消息列表
+            **kwargs: 其他参数
+            
+        Returns:
+            str: AI回复内容
+        """
+        if not messages:
+            raise Exception("消息列表不能为空")
+        
+        provider = role_config.get("provider", self.default_model)
+        model = role_config.get("model", "")
+        
+        client = self.get_client(provider)
+        
+        if not model:
+            model = self.get_model_for_stage(provider, "default")
+        
+        merged_kwargs = {
+            "temperature": role_config.get("temperature", 0.7),
+            "top_p": role_config.get("top_p", 0.9),
+            "max_tokens": role_config.get("max_tokens", 8000),
+            **kwargs
+        }
+        
+        return client.chat_completion(model, messages, **merged_kwargs)
     
     def get_model_for_stage(self, model_type: str, stage: str) -> str:
         """

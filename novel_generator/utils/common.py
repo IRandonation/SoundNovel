@@ -85,37 +85,40 @@ def setup_logging(
 
 
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
-    """
-    加载配置文件
-    
-    Args:
-        config_path: 配置文件路径，默认为 05_script/config.json
-        
-    Returns:
-        Dict[str, Any]: 配置字典
-        
-    Raises:
-        FileNotFoundError: 配置文件不存在
-        json.JSONDecodeError: JSON解析错误
-    """
     project_root = get_project_root()
+    session_path = project_root / "05_script" / "session.json"
     
     if config_path is None:
-        config_path = project_root / "05_script" / "config.json"
-    else:
-        config_path = Path(config_path)
+        if session_path.exists():
+            from novel_generator.config.session import SessionManager
+            session_manager = SessionManager(str(project_root))
+            config = session_manager.get_api_config()
+            if 'paths' not in config:
+                config['paths'] = {}
+            config['paths']['project_root'] = str(project_root)
+            return config
+        raise FileNotFoundError(f"配置文件不存在: {session_path}")
+    
+    config_path = Path(config_path)
     
     if not config_path.exists():
         raise FileNotFoundError(f"配置文件不存在: {config_path}")
     
+    if config_path.name == "session.json":
+        from novel_generator.config.session import SessionManager
+        session_manager = SessionManager(str(project_root))
+        config = session_manager.get_api_config()
+        if 'paths' not in config:
+            config['paths'] = {}
+        config['paths']['project_root'] = str(project_root)
+        return config
+    
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
     
-    # 确保paths配置存在
     if 'paths' not in config:
         config['paths'] = {}
     
-    # 添加项目根目录到配置
     config['paths']['project_root'] = str(project_root)
     
     return config
@@ -179,7 +182,7 @@ def validate_project_structure(
         required_files = [
             "01_source/core_setting.yaml",
             "01_source/overall_outline.yaml",
-            "04_prompt/style_guide.yaml",
+            "04_prompt/prompts/style_guide.yaml",
         ]
     
     missing_files = []
@@ -250,7 +253,8 @@ def ensure_directories(project_root: Optional[Path] = None) -> None:
         "01_source",
         "02_outline",
         "03_draft",
-        "04_prompt",
+        "04_prompt/prompts",
+        "04_prompt/tracking",
         "05_script",
         "06_log",
     ]
@@ -306,7 +310,7 @@ def load_style_guide(project_root: Optional[Path] = None) -> Dict[str, Any]:
     if project_root is None:
         project_root = get_project_root()
     
-    style_path = project_root / "04_prompt" / "style_guide.yaml"
+    style_path = project_root / "04_prompt" / "prompts" / "style_guide.yaml"
     return load_yaml_file(style_path, default={})
 
 

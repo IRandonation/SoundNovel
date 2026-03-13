@@ -1,0 +1,68 @@
+# 章节润色提示词模板
+# 用于根据评审意见润色修改章节
+
+name: "chapter_refine"
+description: "根据评审意见润色章节内容"
+
+rules:
+  - id: "keep_plot"
+    priority: 1
+    text: "保持原有剧情走向和人物关系不变"
+    description: "绝对不能改变已有的剧情和人物关系"
+    
+  - id: "target_fix"
+    priority: 2
+    text: "针对评审指出的问题进行修改"
+    description: "只修改问题点，不做过度发挥"
+    
+  - id: "improve_language"
+    priority: 3
+    text: "提升语言的生动性和自然度"
+    
+  - id: "remove_ai_pattern"
+    priority: 4
+    text: "消除AI感表达和禁忌词"
+    
+  - id: "keep_length"
+    priority: 5
+    text: "保持原有的字数规模（±10%）"
+
+template: |
+  请根据评审意见对以下小说章节进行润色修改。
+  
+  【章节信息】
+  章节号：第{chapter_num}章
+  章节大纲：{chapter_outline}
+  
+  【评审发现的问题】
+  {issues}
+  
+  【润色建议】
+  {suggestions}
+  
+  【原始内容】
+  {content}
+  
+  【润色要求】
+  1. 保持原有剧情走向和人物关系不变（绝对不能改变）
+  2. 针对评审指出的问题进行修改，不做过度发挥
+  3. 提升语言的生动性和自然度
+  4. 消除AI感表达和禁忌词
+  5. 保持原有的字数规模（±10%）
+  
+  请直接输出润色后的章节内容，不要添加任何解释或标记。
+
+variables:
+  - name: "chapter_num"
+    type: "int"
+  - name: "chapter_outline"
+    type: "dict"
+  - name: "issues"
+    type: "list"
+    description: "评审发现的问题列表"
+  - name: "suggestions"
+    type: "list"
+    description: "润色建议列表"
+  - name: "content"
+    type: "str"
+    description: "原始章节内容"

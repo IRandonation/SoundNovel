@@ -1,6 +1,7 @@
 # API配置文件 - 包含敏感信息
 api_config.json
 config.json
+session.json
 
 # Python缓存文件
 __pycache__/
@@ -130,22 +131,27 @@ Thumbs.db
 # 配置与敏感内容
 01_source/core_setting.yaml
 01_source/overall_outline.yaml
-05_script/config.json
+05_script/*.json
 
 # 示例文件保留（不要屏蔽示例）
 !01_source/core_setting.example.yaml
 !01_source/overall_outline.example.yaml
-!05_script/config.example.json
 !source/examples/**
 
 # 生成内容（不进入公开仓库）
 02_outline/
-02_outline/outline_history/
 03_draft/
-03_draft/draft_history/
+04_prompt/tracking
 06_log/
-source/
+
 
 # 更精确的忽略规则（保留通配兼容）
-03_draft/**/*.md
+03_draft/*.txt
 02_outline/**/*.yaml
+
+# Token/API 使用统计导出
+tokscale-export-*.json
+
+# IDE 运行配置
+.idea/
+*.iml

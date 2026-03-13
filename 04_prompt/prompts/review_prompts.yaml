@@ -1,0 +1,120 @@
+# 章节评审提示词模板
+# 用于评审生成的章节质量
+
+name: "chapter_review"
+description: "评审章节质量，检测重复、禁忌词、AI感等问题"
+
+dimensions:
+  - id: "plot_consistency"
+    name: "剧情一致性"
+    weight: 30
+    description: "检查是否与前文逻辑连贯，是否重复前文内容"
+    critical: true
+    check_points:
+      - "是否重复了前文已经发生的剧情"
+      - "人物行为是否符合设定"
+      - "情节逻辑是否连贯"
+      - "是否存在前后矛盾"
+      
+  - id: "banned_words"
+    name: "禁忌词检测"
+    weight: 20
+    description: "检测AI感词汇"
+    critical: false
+    check_words:
+      - "复杂的思绪"
+      - "难以言喻"
+      - "命运的齿轮"
+      - "心中五味杂陈"
+      - "一种莫名的"
+      
+  - id: "ai_pattern"
+    name: "AI感检测"
+    weight: 15
+    description: "检测机械表达"
+    critical: false
+    check_patterns:
+      - "一种莫名的"
+      - "仿佛"
+      - "似乎"
+      - "这一刻"
+      - "不由得"
+      - "不禁"
+      
+  - id: "plot_progress"
+    name: "情节推进"
+    weight: 20
+    description: "检查核心事件是否充分展开"
+    critical: false
+    
+  - id: "writing_quality"
+    name: "文笔质量"
+    weight: 15
+    description: "检查语言是否生动自然"
+    critical: false
+
+pass_criteria:
+  min_total_score: 70
+  critical_rules:
+    - "如果发现重复前文内容，总分必须扣20分以上"
+    - "如果剧情严重矛盾，直接判定不通过"
+
+template: |
+  请对以下小说章节进行全面评审。
+  
+  【章节信息】
+  章节号：第{chapter_num}章
+  章节大纲：{chapter_outline}
+  
+  【核心设定】
+  {core_setting}
+  
+  【待评审内容】
+  {content}
+  
+  【评审维度】（每项0-100分）
+  
+  1. 剧情一致性（30%权重）
+     - 是否重复了前文已经发生的剧情？（最重要！）
+     - 人物行为是否符合设定？
+     - 情节逻辑是否连贯？
+     
+  2. 禁忌词检测（20%权重）
+     - 是否存在"复杂的思绪"、"难以言喻"、"命运的齿轮"等AI感词汇？
+     
+  3. AI感检测（15%权重）
+     - 是否存在"一种莫名的"、"仿佛"、"似乎"等机械表达？
+     
+  4. 情节推进（20%权重）
+     - 核心事件是否得到充分展开？
+     
+  5. 文笔质量（15%权重）
+     - 语言是否生动，是否过于书面化？
+  
+  【输出格式】必须严格按以下JSON格式输出：
+  {{
+    "剧情一致性": {{"score": 85, "issues": ["问题1"], "suggestions": ["建议1"]}},
+    "禁忌词检测": {{"score": 90, "issues": [], "suggestions": []}},
+    "AI感检测": {{"score": 80, "issues": [], "suggestions": []}},
+    "情节推进": {{"score": 85, "issues": [], "suggestions": []}},
+    "文笔质量": {{"score": 88, "issues": [], "suggestions": []}},
+    "total_score": 85,
+    "passed": true,
+    "main_issues": ["主要问题1"],
+    "refine_suggestions": ["润色建议1"]
+  }}
+  
+  评分标准：
+  - 总分≥70分且无严重问题：passed=true
+  - 发现重复前文内容：总分扣20分以上
+  - 总分<70分或有严重剧情问题：passed=false
+
+variables:
+  - name: "chapter_num"
+    type: "int"
+  - name: "chapter_outline"
+    type: "dict"
+  - name: "core_setting"
+    type: "dict"
+  - name: "content"
+    type: "str"

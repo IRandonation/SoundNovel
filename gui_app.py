@@ -7,39 +7,36 @@ from pathlib import Path
 import logging
 import time
 
-# Add project root to path
 if getattr(sys, 'frozen', False):
-    # If frozen (PyInstaller), use the directory of the executable
     project_root = Path(sys.executable).parent
 else:
-    # If running from source, use the directory of this script
     project_root = Path(__file__).parent.resolve()
 
-# Only add to sys.path if running from source (PyInstaller handles imports internally)
 if not getattr(sys, 'frozen', False):
     sys.path.insert(0, str(project_root))
 
 from novel_generator.core.batch_outline_generator import BatchOutlineGenerator
 from novel_generator.core.chapter_expander import ChapterExpander
-from novel_generator.utils.multi_model_client import MultiModelClient
-from novel_generator.core.sliding_window import ContextManager
+from novel_generator.core.outline_generator import OutlineGenerator
+from novel_generator.config.session import SessionManager
+from novel_generator.config.generation_config import GenerationConfigManager
 
-# 注意：GUI 使用自己独立的 load_config 函数
-# 这是为了处理 Streamlit/PyInstaller 的特殊路径需求
-# CLI 工具使用 novel_generator.utils.common.load_config()
+
+def get_gen_config_manager():
+    return GenerationConfigManager(str(project_root))
+
+
 def load_config():
-    config_path = project_root / "05_script" / "config.json"
-    if config_path.exists():
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        # Ensure paths are absolute or correct relative to root
-        # This app runs from root, so relative paths in config (like "01_source/...") should work
-        # but let's inject project_root just in case
-        if 'paths' not in config:
-            config['paths'] = {}
-        config['paths']['project_root'] = str(project_root)
-        return config
-    return None
+    session_manager = SessionManager(str(project_root))
+    config = session_manager.get_api_config()
+    if 'paths' not in config:
+        config['paths'] = {}
+    config['paths']['project_root'] = str(project_root)
+    return config
+
+
+def get_session_manager():
+    return SessionManager(str(project_root))
 
 def main():
     st.set_page_config(page_title="小说创作助手 AI", layout="wide", page_icon="📚")
@@ -59,11 +56,12 @@ def main():
         # API Configuration
         with st.expander("🔑 API 密钥配置", expanded=True):
             # Model Provider Selection
-            model_provider = st.radio("当前 AI 服务商", ["ZhipuAI (智谱)", "Doubao (豆包)"], horizontal=True, 
-                                    index=0 if config.get('models', {}).get('default_model_type', 'zhipu') == 'zhipu' else 1)
+            model_provider = st.radio("当前 AI 服务商", ["ZhipuAI (智谱)", "Doubao (豆包)", "DeepSeek"], horizontal=True, 
+                                    index=0 if config.get('models', {}).get('default_model_type', 'zhipu') == 'zhipu' else (1 if config.get('models', {}).get('default_model_type', 'doubao') == 'doubao' else 2))
             
             # Map selection back to config value
-            selected_provider_code = 'zhipu' if "ZhipuAI" in model_provider else 'doubao'
+            provider_map = {"ZhipuAI (智谱)": "zhipu", "Doubao (豆包)": "doubao", "DeepSeek": "deepseek"}
+            selected_provider_code = provider_map.get(model_provider, 'zhipu')
             
             # Save if changed
             if config.get('models', {}).get('default_model_type') != selected_provider_code:
@@ -78,17 +76,19 @@ def main():
             st.markdown("---")
             api_key = st.text_input("Zhipu API Key", value=config.get('api_key', ''), type="password")
             doubao_key = st.text_input("Doubao API Key", value=config.get('doubao_api_key', ''), type="password")
+            deepseek_key = st.text_input("DeepSeek API Key", value=config.get('deepseek_api_key', ''), type="password")
             
             if st.button("💾 保存 API 密钥"):
                 config['api_key'] = api_key
                 config['doubao_api_key'] = doubao_key
+                config['deepseek_api_key'] = deepseek_key
                 with open(project_root / "05_script" / "config.json", 'w', encoding='utf-8') as f:
                     json.dump(config, f, indent=4, ensure_ascii=False)
                 st.success("API 密钥已保存")
 
         # Model Configuration
         with st.expander("🤖 模型配置", expanded=False):
-            model_config_tab1, model_config_tab2 = st.tabs(["智谱AI", "豆包(Doubao)"])
+            model_config_tab1, model_config_tab2, model_config_tab3 = st.tabs(["智谱AI", "豆包(Doubao)", "DeepSeek"])
             
             with model_config_tab1:
                 # Default Models if not in config
@@ -173,6 +173,52 @@ def main():
                             json.dump(config, f, indent=4, ensure_ascii=False)
                         st.success("豆包配置已保存")
 
+            with model_config_tab3:
+                st.caption("配置 DeepSeek 模型")
+                
+                default_deepseek_models = {
+                    "logic_analysis_model": "deepseek-chat",
+                    "major_chapters_model": "deepseek-chat",
+                    "sub_chapters_model": "deepseek-chat",
+                    "expansion_model": "deepseek-chat",
+                    "default_model": "deepseek-chat"
+                }
+
+                if 'deepseek_models' not in config:
+                    config['deepseek_models'] = default_deepseek_models.copy()
+                
+                current_deepseek = config['deepseek_models']
+                
+                use_single_deepseek_model = st.checkbox("使用统一的模型名称", value=True, key="deepseek_single")
+                
+                if use_single_deepseek_model:
+                    common_model = st.text_input("模型名称", value=current_deepseek.get("default_model", "deepseek-chat"), 
+                                                help="如: deepseek-chat, deepseek-coder")
+                    if st.button("💾 保存DeepSeek配置"):
+                        for k in current_deepseek.keys():
+                            current_deepseek[k] = common_model
+                        config['deepseek_models'] = current_deepseek
+                        with open(project_root / "05_script" / "config.json", 'w', encoding='utf-8') as f:
+                            json.dump(config, f, indent=4, ensure_ascii=False)
+                        st.success("DeepSeek配置已保存")
+                else:
+                    ds_new_logic = st.text_input("逻辑分析模型", value=current_deepseek.get("logic_analysis_model", "deepseek-chat"))
+                    ds_new_major = st.text_input("大纲生成模型", value=current_deepseek.get("major_chapters_model", "deepseek-chat"))
+                    ds_new_sub = st.text_input("细分大纲模型", value=current_deepseek.get("sub_chapters_model", "deepseek-chat"))
+                    ds_new_exp = st.text_input("章节扩写模型", value=current_deepseek.get("expansion_model", "deepseek-chat"))
+                    ds_new_def = st.text_input("默认模型", value=current_deepseek.get("default_model", "deepseek-chat"))
+                    
+                    if st.button("💾 保存DeepSeek配置", key="save_deepseek_detailed"):
+                        config['deepseek_models']['logic_analysis_model'] = ds_new_logic
+                        config['deepseek_models']['major_chapters_model'] = ds_new_major
+                        config['deepseek_models']['sub_chapters_model'] = ds_new_sub
+                        config['deepseek_models']['expansion_model'] = ds_new_exp
+                        config['deepseek_models']['default_model'] = ds_new_def
+                        
+                        with open(project_root / "05_script" / "config.json", 'w', encoding='utf-8') as f:
+                            json.dump(config, f, indent=4, ensure_ascii=False)
+                        st.success("DeepSeek配置已保存")
+
             
             st.markdown("---")
             if st.button("🧪 测试模型连接", help="测试当前配置的 API Key 和模型是否可用"):
@@ -195,12 +241,146 @@ def main():
                 except Exception as e:
                     st.error(f"测试过程发生错误: {str(e)}")
 
+        with st.expander("AI角色配置", expanded=False):
+            st.caption("为不同AI角色配置专用模型")
+            
+            gen_config_mgr = get_gen_config_manager()
+            
+            gen_config = gen_config_mgr.get_generation_config()
+            st.subheader("生成流程参数")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                max_iterations = st.number_input(
+                    "最大润色迭代次数",
+                    min_value=1, max_value=10,
+                    value=gen_config.get('max_refine_iterations', 3),
+                    key="max_refine_iterations"
+                )
+                context_chapters = st.number_input(
+                    "上下文章节数",
+                    min_value=1, max_value=20,
+                    value=gen_config.get('context_chapters', 10),
+                    key="context_chapters"
+                )
+            with col_b:
+                pass_score = st.number_input(
+                    "评审通过分数",
+                    min_value=0, max_value=100,
+                    value=gen_config.get('pass_score_threshold', 70),
+                    key="pass_score_threshold"
+                )
+                default_words = st.number_input(
+                    "默认字数目标",
+                    min_value=500, max_value=5000,
+                    value=gen_config.get('default_word_count', 1500),
+                    step=100,
+                    key="default_word_count"
+                )
+            
+            if st.button("保存生成流程参数"):
+                gen_config_mgr.set_generation_config(
+                    max_refine_iterations=max_iterations,
+                    pass_score_threshold=pass_score,
+                    context_chapters=context_chapters,
+                    default_word_count=default_words
+                )
+                st.success("生成流程参数已保存")
+            
+            st.markdown("---")
+            
+            st.subheader("角色模型配置")
+            
+            role_names = {
+                "generator": "生成者 (Generator)",
+                "reviewer": "评审者 (Reviewer)", 
+                "refiner": "润色者 (Refiner)"
+            }
+            
+            role_descriptions = {
+                "generator": "负责大纲生成、章节扩写等创作任务",
+                "reviewer": "负责质量检查、一致性检查等评审任务",
+                "refiner": "负责内容润色、修复问题等优化任务"
+            }
+            
+            providers = gen_config_mgr.get_all_providers()
+            provider_options = list(providers.keys())
+            
+            role_tabs = st.tabs(["生成者", "评审者", "润色者"])
+            
+            for idx, (role_key, role_name) in enumerate(role_names.items()):
+                with role_tabs[idx]:
+                    st.caption(role_descriptions[role_key])
+                    
+                    role_config = gen_config_mgr.get_role_config(role_key)
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        current_provider = role_config.get('provider', 'zhipu')
+                        provider_idx = provider_options.index(current_provider) if current_provider in provider_options else 0
+                        new_provider = st.selectbox(
+                            "服务商",
+                            provider_options,
+                            index=provider_idx,
+                            format_func=lambda x: providers.get(x, x),
+                            key=f"role_{role_key}_provider"
+                        )
+                    
+                    with col2:
+                        models = gen_config_mgr.get_provider_models(new_provider)
+                        default_model = models[0] if models else ""
+                        new_model = st.text_input(
+                            "模型名称",
+                            value=role_config.get('model', default_model),
+                            key=f"role_{role_key}_model"
+                        )
+                    
+                    col3, col4 = st.columns(2)
+                    with col3:
+                        new_temp = st.slider(
+                            "Temperature",
+                            min_value=0.0,
+                            max_value=1.0,
+                            value=float(role_config.get('temperature', 0.7)),
+                            step=0.1,
+                            key=f"role_{role_key}_temp"
+                        )
+                    with col4:
+                        new_enabled = st.checkbox(
+                            "启用此角色",
+                            value=role_config.get('enabled', True),
+                            key=f"role_{role_key}_enabled"
+                        )
+                    
+                    new_max_tokens = st.number_input(
+                        "Max Tokens",
+                        min_value=1000,
+                        max_value=32000,
+                        value=int(role_config.get('max_tokens', 8000)),
+                        step=500,
+                        key=f"role_{role_key}_max_tokens"
+                    )
+                    
+                    if st.button(f"保存{role_name}配置", key=f"save_role_{role_key}"):
+                        gen_config_mgr.set_role_config(
+                            role_name=role_key,
+                            provider=new_provider,
+                            model=new_model,
+                            temperature=new_temp,
+                            max_tokens=new_max_tokens,
+                            enabled=new_enabled
+                        )
+                        st.success(f"{role_name}配置已保存")
+            
+            st.markdown("---")
+            st.caption("提示：生成者使用较高temperature增加创意，评审者使用较低temperature提高精确度")
+
         with st.expander("🚀 项目初始化", expanded=False):
             st.caption("配置 API 连接并测试")
             
             init_provider = st.selectbox(
                 "选择服务商",
-                ["智谱 AI (ZhipuAI)", "豆包 (Doubao)"],
+                ["智谱 AI (ZhipuAI)", "豆包 (Doubao)", "DeepSeek"],
                 key="init_provider_select"
             )
             
@@ -212,14 +392,27 @@ def main():
                     key="init_zhipu_url"
                 )
                 init_endpoint = None
-            else:
+            elif "豆包" in init_provider:
                 init_api_key = st.text_input("API Key", type="password", key="init_doubao_key")
                 init_api_url = st.text_input(
                     "API 地址（可选）",
                     value="https://ark.cn-beijing.volces.com/api/v3",
                     key="init_doubao_url"
                 )
-                init_endpoint = st.text_input("Endpoint ID", key="init_doubao_endpoint", placeholder="ep-2024xxxx")
+                init_endpoint = st.text_input(
+                    "模型名称", 
+                    key="init_doubao_endpoint", 
+                    placeholder="doubao-1-5-lite-32k-250115 或 ep-2024xxxx",
+                    help="支持直接模型名（如 doubao-1-5-lite-32k-250115）或 Endpoint ID（如 ep-2024xxxx）"
+                )
+            else:  # DeepSeek
+                init_api_key = st.text_input("API Key", type="password", key="init_deepseek_key")
+                init_api_url = st.text_input(
+                    "API 地址（可选）",
+                    value="https://api.deepseek.com",
+                    key="init_deepseek_url"
+                )
+                init_endpoint = None
             
             if st.button("💾 保存并测试连接", key="init_save_test"):
                 if not init_api_key:
@@ -229,7 +422,13 @@ def main():
                         from novel_generator.core.project_manager import ProjectManager
                         manager = ProjectManager(str(project_root))
                         
-                        provider_code = "zhipu" if "智谱" in init_provider else "doubao"
+                        if "智谱" in init_provider:
+                            provider_code = "zhipu"
+                        elif "豆包" in init_provider:
+                            provider_code = "doubao"
+                        else:
+                            provider_code = "deepseek"
+                        
                         success, message = manager.update_api_config(
                             provider=provider_code,
                             api_key=init_api_key,
@@ -242,6 +441,30 @@ def main():
                             st.rerun()
                         else:
                             st.error(f"❌ {message}")
+
+        with st.expander("📊 项目状态", expanded=False):
+            session_mgr = get_session_manager()
+            status = session_mgr.get_status_summary()
+            
+            provider_names = {"zhipu": "智谱 AI", "doubao": "豆包", "ark": "Ark", "deepseek": "DeepSeek"}
+            
+            st.caption(f"项目: {status['project_name']}")
+            
+            col_s1, col_s2 = st.columns(2)
+            with col_s1:
+                st.metric("大纲进度", f"{status['last_outline']} 章")
+            with col_s2:
+                st.metric("草稿进度", f"{status['last_draft']} 章")
+            
+            if status['total_chapters'] > 0:
+                progress = status['last_draft'] / status['total_chapters']
+                st.progress(progress, text=f"总进度: {status['last_draft']}/{status['total_chapters']} ({progress*100:.1f}%)")
+            
+            st.caption(f"服务商: {provider_names.get(status['api_provider'], status['api_provider'])}")
+            
+            if st.button("🔄 同步文件状态", help="从实际文件检测最新进度"):
+                session_mgr.sync_with_files()
+                st.rerun()
 
         st.info(f"当前工作目录: {project_root}")
 
@@ -797,11 +1020,38 @@ def main():
                 if chapters:
                     st.info(f"文件中包含章节: {chapters[0]} - {chapters[-1]}")
                     
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        start_ch = st.number_input("起始章节", value=chapters[0], min_value=chapters[0], max_value=chapters[-1])
-                    with c2:
-                        end_ch = st.number_input("结束章节", value=chapters[0], min_value=chapters[0], max_value=chapters[-1])
+                    session_mgr = get_session_manager()
+                    continue_info = session_mgr.get_continue_info("draft")
+                    
+                    if continue_info["can_continue"]:
+                        st.success(f"📍 检测到上次进度: 已完成第 {continue_info['last_chapter']} 章")
+                        
+                        col_cont1, col_cont2 = st.columns(2)
+                        with col_cont1:
+                            if st.button("🔄 一键续写", type="primary", key="quick_continue_btn"):
+                                st.session_state['quick_continue_mode'] = True
+                                st.session_state['continue_start'] = continue_info['next_chapter']
+                                st.session_state['continue_end'] = continue_info['total_chapters'] if continue_info['total_chapters'] > 0 else chapters[-1]
+                                st.rerun()
+                        with col_cont2:
+                            if st.button("📝 手动选择范围", key="manual_select_btn"):
+                                st.session_state['quick_continue_mode'] = False
+                                st.rerun()
+                    
+                    if st.session_state.get('quick_continue_mode'):
+                        start_ch = st.session_state.get('continue_start', chapters[0])
+                        end_ch = st.session_state.get('continue_end', chapters[-1])
+                        st.info(f"续写范围: 第 {start_ch} 章 - 第 {end_ch} 章")
+                        
+                        if st.button("❌ 取消续写", key="cancel_continue"):
+                            st.session_state['quick_continue_mode'] = False
+                            st.rerun()
+                    else:
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            start_ch = st.number_input("起始章节", value=chapters[0], min_value=chapters[0], max_value=chapters[-1])
+                        with c2:
+                            end_ch = st.number_input("结束章节", value=chapters[0], min_value=chapters[0], max_value=chapters[-1])
                     
                     # 结果展示区（位于按钮下方）
                     if 'last_generated_novel_dir' in st.session_state or 'last_generated_draft_dir' in st.session_state:
@@ -848,10 +1098,8 @@ def main():
                         try:
                             client = MultiModelClient(config)
                             expander = ChapterExpander(config, client)
-                            context_manager = ContextManager(config, client)
                             
-                            # Load Style Guide
-                            style_path = project_root / "04_prompt" / "style_guide.yaml"
+                            style_path = project_root / "04_prompt" / "prompts" / "style_guide.yaml"
                             style_guide = {}
                             if style_path.exists():
                                 with open(style_path, 'r', encoding='utf-8') as f:
@@ -864,15 +1112,15 @@ def main():
                             total = end_ch - start_ch + 1
                             current_idx = 0
                             
+                            session_mgr_gui = get_session_manager()
+                            
+                            context_window = config.get('novel_generation', {}).get('context_chapters', 10)
+                            context_parts = []
+                            
                             for ch_num in range(start_ch, end_ch + 1):
                                 with log_container:
-                                    st.write(f"⏳ 正在处理第 {ch_num} 章...")
+                                    st.write(f"正在处理第 {ch_num} 章...")
                                 
-                                # 1. Prepare Context (includes Summary Generation)
-                                previous_context, _ = context_manager.prepare_context(ch_num, str(outline_file_path), draft_dir)
-                                
-                                # 2. Get Chapter Data
-                                # Try various key formats
                                 ch_data = None
                                 for key in [f"第{ch_num}章", f"{ch_num}", f"Chapter {ch_num}"]:
                                     if key in chapter_outline:
@@ -880,26 +1128,51 @@ def main():
                                         break
                                 
                                 if ch_data:
-                                    # 3. Expand
-                                    content = expander.expand_chapter(ch_num, ch_data, previous_context, style_guide)
+                                    previous_context = "\n\n".join(context_parts[-context_window:]) if context_parts else ""
                                     
-                                    # 4. Save
+                                    result = expander.expand_chapter(ch_num, ch_data, previous_context, style_guide)
+                                    content = result[0] if isinstance(result, tuple) else result
+                                    
                                     expander.save_chapter(ch_num, content, draft_dir)
+                                    
+                                    context_parts.append(f"【第{ch_num}章摘要】\n{content[:500]}...")
+                                    
+                                    session_mgr_gui.update_progress("draft", start_ch, ch_num, str(outline_file_path))
+                                    
                                     st.toast(f"第 {ch_num} 章完成！", icon="✅")
                                 else:
-                                    st.warning(f"⚠️ 大纲中找不到第 {ch_num} 章的数据，跳过。")
+                                    st.warning(f"大纲中找不到第 {ch_num} 章的数据，跳过。")
                                 
                                 current_idx += 1
                                 progress_bar.progress(current_idx / total)
-                                
+                            
+                            session_mgr_gui.add_session_record(
+                                action="expand",
+                                start_chapter=start_ch,
+                                end_chapter=end_ch,
+                                model_used=client.get_current_model(),
+                                success=True
+                            )
+                            
+                            if 'quick_continue_mode' in st.session_state:
+                                st.session_state['quick_continue_mode'] = False
+                            
                             st.success("🎉 所有章节扩写完成！")
                             st.balloons()
                             
-                            # 保存最后生成的目录到 session_state
-                            st.session_state['last_generated_draft_dir'] = draft_dir # 保留草稿目录供参考
-                            st.rerun() # 重新运行以显示按钮
+                            st.session_state['last_generated_draft_dir'] = draft_dir
+                            st.rerun()
                             
                         except Exception as e:
+                            session_mgr_gui = get_session_manager()
+                            session_mgr_gui.add_session_record(
+                                action="expand",
+                                start_chapter=start_ch,
+                                end_chapter=end_ch,
+                                model_used="",
+                                success=False,
+                                error_message=str(e)
+                            )
                             st.error(f"❌ 发生错误: {str(e)}")
                             st.exception(e)
                 else:
