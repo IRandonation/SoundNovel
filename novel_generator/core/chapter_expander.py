@@ -124,7 +124,39 @@ class ChapterExpander:
             style_guide=style_guide
         )
         
+        self.logger.info(f"第{chapter_num}章生成完成，执行首次润色...")
+        content = self._first_refine_chapter(
+            content=content,
+            chapter_num=chapter_num,
+            chapter_outline=chapter_outline,
+            core_setting=core_setting,
+            previous_context=previous_context,
+            style_guide=style_guide
+        )
+        
+        review_result = self._review_chapter(
+            content=content,
+            chapter_num=chapter_num,
+            chapter_outline=chapter_outline,
+            core_setting=core_setting,
+            style_guide=style_guide
+        )
+        
+        if review_result.get('passed', False):
+            self.logger.info(f"第{chapter_num}章首次审查通过")
+            return content
+        
         for iteration in range(self.max_refine_iterations):
+            self.logger.info(f"第{chapter_num}章审查未通过 (总分: {review_result.get('total_score', 0)})，进行问题修复润色...")
+            
+            content = self._refine_chapter(
+                content=content,
+                chapter_num=chapter_num,
+                chapter_outline=chapter_outline,
+                review_result=review_result,
+                style_guide=style_guide
+            )
+            
             review_result = self._review_chapter(
                 content=content,
                 chapter_num=chapter_num,
@@ -134,31 +166,35 @@ class ChapterExpander:
             )
             
             if review_result.get('passed', False):
-                self.logger.info(f"第{chapter_num}章评审通过 (第{iteration + 1}次评审)")
+                self.logger.info(f"第{chapter_num}章在第{iteration + 2}次审查后通过")
                 return content
-            
-            self.logger.info(f"第{chapter_num}章评审未通过 (总分: {review_result.get('total_score', 0)}), 进行润色...")
-            
-            content = self._refine_chapter(
-                content=content,
-                chapter_num=chapter_num,
-                chapter_outline=chapter_outline,
-                review_result=review_result,
-                style_guide=style_guide
-            )
         
-        final_review = self._review_chapter(
-            content=content,
+        self.logger.warning(f"第{chapter_num}章经过{self.max_refine_iterations + 1}次润色仍未达标，使用当前版本")
+        return content
+    
+    def _first_refine_chapter(
+        self,
+        content: str,
+        chapter_num: int,
+        chapter_outline: Dict[str, Any],
+        core_setting: Dict[str, Any],
+        previous_context: str,
+        style_guide: Dict[str, Any]
+    ) -> str:
+        prompt = self.prompt_manager.build_first_refine_prompt(
             chapter_num=chapter_num,
             chapter_outline=chapter_outline,
             core_setting=core_setting,
-            style_guide=style_guide
+            previous_context=previous_context,
+            content=content
         )
         
-        if not final_review.get('passed', False):
-            self.logger.warning(f"第{chapter_num}章经过{self.max_refine_iterations}次润色仍未达标，使用当前版本")
+        response = self.ai_role_manager.chat_completion(
+            role=AIRole.REFINER,
+            messages=[{"role": "user", "content": prompt}]
+        )
         
-        return content
+        return self._clean_response(response)
     
     def _generate_chapter(
         self,

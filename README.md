@@ -15,18 +15,18 @@
 ## 三角色协作流程
 
 ```
-Generator生成 → Reviewer评审 → [通过?]
-                                  ↓ 否
-                            Refiner润色 → 再评审 → [通过?]
-                                                    ↓ 否
-                                              循环(最多3次)
+Generator生成 → Refiner首次润色(必做) → Reviewer评审 → [通过?]
+                                                          ↓ 否
+                                                    Refiner问题修复 → 再评审 → [通过?]
+                                                                                ↓ 否
+                                                                          循环(最多N次)
 ```
 
 | 角色 | 职责 | 推荐配置 |
 |------|------|----------|
 | **Generator** | 章节生成、大纲创建 | temperature=0.7，注重创意 |
+| **Refiner** | 首次润色（硬性规则检查）、问题修复 | temperature=0.5，平衡质量 |
 | **Reviewer** | 质量评审、一致性检查 | temperature=0.3，注重精确 |
-| **Refiner** | 内容润色、问题修复 | temperature=0.5，平衡质量 |
 
 ## Prompt系统
 
