@@ -472,10 +472,8 @@ def main():
             provider_map = {"Doubao (豆包/火山)": "doubao", "DeepSeek": "deepseek"}
             selected_provider_code = provider_map.get(model_provider, "doubao")
 
-            if (
-                config.get("models", {}).get("default_model_type")
-                != selected_provider_code
-            ):
+            current_model_type = config.get("models", {}).get("default_model_type", "doubao")
+            if current_model_type != selected_provider_code:
                 if "models" not in config:
                     config["models"] = {}
                 config["models"]["default_model_type"] = selected_provider_code
