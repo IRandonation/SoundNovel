@@ -182,6 +182,9 @@ def create_parser() -> argparse.ArgumentParser:
     from novel_generator.cli.commands.settings_cmd import add_parser as add_settings_parser
     add_settings_parser(subparsers)
     
+    from novel_generator.cli.commands.review_cmd import add_parser as add_review_parser
+    add_review_parser(subparsers)
+    
     return parser
 
 
