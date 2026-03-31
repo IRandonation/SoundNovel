@@ -1207,7 +1207,7 @@ Max Concurrent: 5 (Wave 3 & 4)
 - [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill if UI)
 ### Wave 5: Cleanup & Final Verification
 
-- [ ] 19. **__pycache__ Cleanup**
+- [x] 19. **__pycache__ Cleanup**
 
   **What to do**:
   - Run `git clean -fdX` to remove tracked __pycache__ directories (7 directories)
@@ -1253,7 +1253,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   - Message: `chore: clean __pycache__ directories`
   - Files: .gitignore (if updated)
 
-- [ ] 20. **Final CLI Verification**
+- [x] 20. **Final CLI Verification**
 
   **What to do**:
   - Run all CLI commands: init, status, settings, outline, expand (if sample data available)
@@ -1301,7 +1301,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   **Commit**: NO
   - Verification only
 
-- [ ] 21. **Final GUI Verification**
+- [x] 21. **Final GUI Verification**
 
   **What to do**:
   - Launch GUI headless from root `gui_app.py`
@@ -1350,7 +1350,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   **Commit**: NO
   - Verification only
 
-- [ ] 22. **Test Coverage Check**
+- [x] 22. **Test Coverage Check**
 
   **What to do**:
   - Run pytest with coverage: `uv run pytest tests/ --cov=novel_generator --cov-report=term`
@@ -1394,7 +1394,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   **Commit**: NO
   - Verification only
 
-- [ ] 23. **Lint/Typecheck Verification**
+- [x] 23. **Lint/Typecheck Verification**
 
   **What to do**:
   - Run ruff: `uv run ruff check novel_generator/`
