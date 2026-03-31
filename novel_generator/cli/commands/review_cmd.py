@@ -15,8 +15,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 
 from novel_generator.core.outline_reviewer import OutlineReviewer, ReviewResult
 from novel_generator.core.outline_chat_service import OutlineChatService
-from novel_generator.config.session import SessionManager
-from novel_generator.config.generation_config import GenerationConfigManager
+from novel_generator.config.config_manager import ConfigManager
 from novel_generator.utils.multi_model_client import MultiModelClient
 from novel_generator.cli.utils import (
     print_success,
@@ -51,9 +50,8 @@ def run(args: argparse.Namespace) -> int:
     print_info("=" * 60)
     print()
     
-    session_manager = SessionManager(str(project_root_path))
-    config = session_manager.get_api_config()
-    config_manager = GenerationConfigManager(str(project_root_path))
+    config_manager = ConfigManager(str(project_root_path))
+    config = config_manager.get_api_config()
     
     client = None
     if args.ai:
@@ -144,9 +142,8 @@ def _start_chat_mode(args: argparse.Namespace, project_root: Path, result: Revie
     print_info("命令: quit=退出, save=保存, review=重新审查, help=帮助")
     print()
     
-    session_manager = SessionManager(str(project_root))
-    config_manager = GenerationConfigManager(str(project_root))
-    config = session_manager.get_api_config()
+    config_manager = ConfigManager(str(project_root))
+    config = config_manager.get_api_config()
     roles_config = config_manager.get_all_roles_config()
     
     if not config.get("api_key") and not config.get("deepseek_api_key"):

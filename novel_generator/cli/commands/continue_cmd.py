@@ -12,7 +12,7 @@ from typing import Optional
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from novel_generator.config.session import SessionManager
+from novel_generator.config.config_manager import ConfigManager
 from novel_generator.core.chapter_expander import ChapterExpander
 from novel_generator.utils.multi_model_client import MultiModelClient
 from novel_generator.utils.common import (
@@ -29,9 +29,9 @@ from novel_generator.cli.utils import (
 def run(args: argparse.Namespace) -> int:
     logger = setup_cli_logging()
     
-    session_manager = SessionManager(str(Path.cwd()))
+    config_manager = ConfigManager(str(Path.cwd()))
     
-    continue_info = session_manager.get_continue_info("draft")
+    continue_info = config_manager.get_continue_info("draft")
     
     if not continue_info["can_continue"] and continue_info["last_chapter"] == 0:
         print_error("没有找到已生成的章节，请先运行 'soundnovel expand' 生成初始章节")
@@ -60,7 +60,7 @@ def run(args: argparse.Namespace) -> int:
     print_info(f"当前进度: {continue_info['last_chapter']} / {total_chapters if total_chapters > 0 else '?'} 章")
     print()
     
-    config = session_manager.get_api_config()
+    config = config_manager.get_api_config()
     
     outline_file = continue_info.get("outline_file")
     if not outline_file:
@@ -121,7 +121,7 @@ def run(args: argparse.Namespace) -> int:
             
             context_parts.append(f"【第{ch_num}章摘要】\n{content[:500]}...")
             
-            session_manager.update_progress("draft", start_chapter, ch_num, str(outline_file))
+            config_manager.update_progress("draft", start_chapter, ch_num, str(outline_file))
             
             print_success(f"第 {ch_num} 章扩写完成")
             success_count += 1
@@ -131,7 +131,7 @@ def run(args: argparse.Namespace) -> int:
             fail_count += 1
             continue
     
-    session_manager.add_session_record(
+    config_manager.add_session_record(
         action="expand",
         start_chapter=start_chapter,
         end_chapter=end_chapter,
@@ -147,7 +147,7 @@ def run(args: argparse.Namespace) -> int:
         print_warning(f"失败: {fail_count} 章")
     print_info(f"草稿位置: {draft_dir}")
     
-    new_info = session_manager.get_continue_info("draft")
+    new_info = config_manager.get_continue_info("draft")
     if new_info["can_continue"]:
         print_info(f"继续续写: 运行 'soundnovel continue'")
     else:

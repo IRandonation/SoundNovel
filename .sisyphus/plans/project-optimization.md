@@ -642,7 +642,7 @@ Max Concurrent: 5 (Wave 3 & 4)
 
 ### Wave 3: Config Merge (High Risk, Parallel with Wave 4)
 
-- [ ] 9. **ConfigManager Design**
+- [x] 9. **ConfigManager Design**
 
   **What to do**:
   - Design unified ConfigManager interface in `novel_generator/config/config_manager.py`
@@ -692,7 +692,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   **Commit**: NO
   - Design phase, no production code yet
 
-- [ ] 10. **ConfigManager Implementation**
+- [x] 10. **ConfigManager Implementation**
 
   **What to do**:
   - Implement ConfigManager in `novel_generator/config/config_manager.py`
@@ -751,7 +751,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   - Files: novel_generator/config/config_manager.py, tests/config/test_config_manager.py
   - Pre-commit: `uv run pytest tests/config/test_config_manager.py -v`
 
-- [ ] 11. **Migration Script**
+- [x] 11. **Migration Script**
 
   **What to do**:
   - Create `scripts/migrate_config.py` for existing user configs
@@ -811,7 +811,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   - Message: `feat: add config migration script`
   - Files: scripts/migrate_config.py
 
-- [ ] 12. **Update All Config Imports**
+- [x] 12. **Update All Config Imports**
 
   **What to do**:
   - Find all usages of Settings, GenerationConfigManager, SessionManager using lsp_find_references
@@ -868,7 +868,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   - Files: All affected files (CLI, GUI, core modules)
   - Pre-commit: `uv run pytest tests/ -v`
 
-- [ ] 13. **Config Roundtrip Test**
+- [x] 13. **Config Roundtrip Test**
 
   **What to do**:
   - Write comprehensive roundtrip test for ConfigManager in `tests/config/test_config_manager.py`
@@ -918,7 +918,7 @@ Max Concurrent: 5 (Wave 3 & 4)
 
 ### Wave 4: GUI Modularization (Parallel with Wave 3)
 
-- [ ] 14. **GUI Tabs Extraction**
+- [x] 14. **GUI Tabs Extraction**
 
   **What to do**:
   - **IMPORTANT**: Keep `gui_app.py` at project root (do NOT move it)
@@ -992,7 +992,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   - Message: `refactor: extract GUI tabs to novel_generator/gui/tabs/`
   - Files: novel_generator/gui/__init__.py, novel_generator/gui/tabs/__init__.py, tabs/config_tab.py, tabs/generation_tab.py, tabs/outline_tab.py, tabs/expand_tab.py, tabs/review_tab.py
 
-- [ ] 15. **GUI Utils Module**
+- [x] 15. **GUI Utils Module**
 
   **What to do**:
   - Create `novel_generator/gui/utils/__init__.py`
@@ -1043,7 +1043,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   - Message: `refactor: extract GUI utils`
   - Files: novel_generator/gui/utils/__init__.py, utils/session_keys.py
 
-- [ ] 16. **GUI App Refactor (Thin Coordinator)**
+- [x] 16. **GUI App Refactor (Thin Coordinator)**
 
   **What to do**:
   - Refactor `gui_app.py` (at root) to thin coordinator: import tabs from `novel_generator.gui.tabs`, render tabs in sequence
@@ -1105,7 +1105,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   - Files: gui_app.py (at root)
   - Pre-commit: GUI smoke test from root
 
-- [ ] 17. **Session State Documentation**
+- [x] 17. **Session State Documentation**
 
   **What to do**:
   - Create `novel_generator/gui/utils/session_keys.py` documenting all session_state keys
@@ -1151,7 +1151,7 @@ Max Concurrent: 5 (Wave 3 & 4)
   - Message: `docs: document GUI session_state keys`
   - Files: novel_generator/gui/utils/session_keys.py
 
-- [ ] 18. **GUI Module Tests**
+- [x] 18. **GUI Module Tests**
 
   **What to do**:
   - Create `tests/gui/` directory: `tests/gui/__init__.py`, `tests/gui/test_tabs.py`

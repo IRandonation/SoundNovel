@@ -90,9 +90,9 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     
     if config_path is None:
         if session_path.exists():
-            from novel_generator.config.session import SessionManager
-            session_manager = SessionManager(str(project_root))
-            config = session_manager.get_api_config()
+            from novel_generator.config.config_manager import ConfigManager
+            manager = ConfigManager(str(project_root))
+            config = manager.get_api_config()
             if 'paths' not in config:
                 config['paths'] = {}
             config['paths']['project_root'] = str(project_root)
@@ -105,9 +105,9 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         raise FileNotFoundError(f"配置文件不存在: {config_path}")
     
     if config_path.name == "session.json":
-        from novel_generator.config.session import SessionManager
-        session_manager = SessionManager(str(project_root))
-        config = session_manager.get_api_config()
+        from novel_generator.config.config_manager import ConfigManager
+        manager = ConfigManager(str(project_root))
+        config = manager.get_api_config()
         if 'paths' not in config:
             config['paths'] = {}
         config['paths']['project_root'] = str(project_root)

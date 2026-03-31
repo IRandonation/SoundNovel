@@ -14,7 +14,7 @@ sys.path.insert(0, str(project_root))
 
 from novel_generator.core.chapter_expander import ChapterExpander
 from novel_generator.config.settings import Settings
-from novel_generator.config.session import SessionManager
+from novel_generator.config.config_manager import ConfigManager
 from novel_generator.utils.multi_model_client import MultiModelClient
 from novel_generator.utils.common import (
     load_config, load_style_guide, load_yaml_file,
@@ -33,10 +33,10 @@ def run(args: argparse.Namespace) -> int:
     print_info("🚀 开始章节扩写...")
     
     try:
-        session_manager = SessionManager(str(Path.cwd()))
+        config_manager = ConfigManager(str(Path.cwd()))
         
         if args.from_last:
-            continue_info = session_manager.get_continue_info("draft")
+            continue_info = config_manager.get_continue_info("draft")
             if continue_info["last_chapter"] == 0:
                 print_error("没有找到已生成的章节，无法续写")
                 return 1
@@ -57,7 +57,7 @@ def run(args: argparse.Namespace) -> int:
             start_chapter = None
             end_chapter = None
         
-        config = session_manager.get_api_config()
+        config = config_manager.get_api_config()
         print_info("配置加载完成")
         
         settings = Settings(config)
@@ -67,7 +67,7 @@ def run(args: argparse.Namespace) -> int:
         if style_guide:
             print_info("风格指导加载完成")
         
-        outline_file_from_session = session_manager.state.generation_state.outline_file
+        outline_file_from_session = config_manager.state.generation_state.outline_file
         
         if args.outline_file:
             outline_file = Path(args.outline_file)
@@ -119,7 +119,7 @@ def run(args: argparse.Namespace) -> int:
             elif choice == "3":
                 chapters_to_expand = list(range(min_ch, max_ch + 1))
             elif choice == "4":
-                continue_info = session_manager.get_continue_info("draft")
+                continue_info = config_manager.get_continue_info("draft")
                 if continue_info["last_chapter"] == 0:
                     print_warning("没有找到已生成的章节，将从第1章开始")
                     chapters_to_expand = list(range(min_ch, max_ch + 1))
@@ -181,7 +181,7 @@ def run(args: argparse.Namespace) -> int:
                 
                 context_parts.append(f"【第{ch_num}章摘要】\n{content[:500]}...")
                 
-                session_manager.update_progress("draft", actual_start, ch_num, str(outline_file))
+                config_manager.update_progress("draft", actual_start, ch_num, str(outline_file))
                 
                 print_success(f"第 {ch_num} 章扩写完成")
                 success_count += 1
@@ -191,7 +191,7 @@ def run(args: argparse.Namespace) -> int:
                 fail_count += 1
                 continue
         
-        session_manager.add_session_record(
+        config_manager.add_session_record(
             action="expand",
             start_chapter=chapters_to_expand[0],
             end_chapter=chapters_to_expand[-1],

@@ -16,7 +16,7 @@ sys.path.insert(0, str(project_root))
 from novel_generator.core.batch_outline_generator import BatchOutlineGenerator
 from novel_generator.core.outline_generator import OutlineGenerator
 from novel_generator.config.settings import Settings
-from novel_generator.config.session import SessionManager
+from novel_generator.config.config_manager import ConfigManager
 from novel_generator.utils.common import (
     load_config, load_core_setting, load_overall_outline,
     get_project_root, ensure_directories
@@ -45,8 +45,8 @@ def run(args: argparse.Namespace) -> int:
         config = load_config(args.config)
         print_info("配置加载完成")
         
-        session_manager = SessionManager(str(get_project_root()))
-        gen_config = session_manager.state.generation_config
+        config_manager = ConfigManager(str(get_project_root()))
+        gen_config = config_manager.state.generation_config
         
         settings = Settings(config)
         settings.validate()
