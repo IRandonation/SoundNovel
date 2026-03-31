@@ -60,12 +60,12 @@ def show_current_settings(
     ai_roles = session_mgr.state.ai_roles
 
     for role_name, role_desc in ROLES.items():
-        role_state = ai_roles.get_role_state(role_name)
-        provider = role_state.provider
-        model = role_state.model
-        enabled = role_state.enabled
-        temperature = role_state.temperature
-        max_tokens = role_state.max_tokens
+        role_config = ai_roles.get_role_config(role_name)
+        provider = role_config.provider
+        model = role_config.model
+        enabled = role_config.enabled
+        temperature = role_config.temperature
+        max_tokens = role_config.max_tokens
 
         status = "启用" if enabled else "禁用"
         provider_name = PROVIDERS.get(provider, provider)

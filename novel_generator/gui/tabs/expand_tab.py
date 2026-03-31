@@ -7,7 +7,7 @@ import streamlit as st
 
 from novel_generator.core.chapter_expander import ChapterExpander
 from novel_generator.utils.multi_model_client import MultiModelClient
-from novel_generator.gui.utils import get_config, get_session_manager
+from novel_generator.gui.utils import get_config, get_config_manager
 
 
 def render(project_root: Path):
@@ -52,7 +52,7 @@ def _render_expansion(project_root, config, outline_dir, selected_file):
 
     st.info(f"文件中包含章节：{chapters[0]} - {chapters[-1]}")
 
-    session_mgr = get_session_manager()
+    session_mgr = get_config_manager()
     continue_info = session_mgr.get_continue_info("draft")
 
     if continue_info["can_continue"]:
@@ -116,7 +116,7 @@ def _run_expansion(
         )
         context_parts = []
 
-        session_mgr_gui = get_session_manager()
+        session_mgr_gui = get_config_manager()
 
         for ch_num in range(start_ch, end_ch + 1):
             with log_container:
@@ -185,7 +185,7 @@ def _run_expansion(
         st.rerun()
 
     except Exception as e:
-        session_mgr_gui = get_session_manager()
+        session_mgr_gui = get_config_manager()
         session_mgr_gui.add_session_record(
             action="expand",
             start_chapter=start_ch,

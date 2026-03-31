@@ -2,8 +2,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from novel_generator.config.session import SessionManager
-from novel_generator.config.generation_config import GenerationConfigManager
+from novel_generator.config.config_manager import ConfigManager
 from novel_generator.core.outline_reviewer import OutlineReviewer
 from novel_generator.core.outline_chat_service import OutlineChatService
 from novel_generator.utils.multi_model_client import MultiModelClient
@@ -59,9 +58,8 @@ def _render_review_section(project_root, config, core_setting_path, overall_outl
 
 def _run_review(project_root, config, core_setting_path, overall_outline_path, use_ai, include_commercial):
     with st.spinner("正在审查大纲..." if not use_ai else "AI正在深度分析大纲..."):
-        session_manager = SessionManager(str(project_root))
-        config_manager = GenerationConfigManager(str(project_root))
-        api_config = session_manager.get_api_config()
+        config_manager = ConfigManager(str(project_root))
+        api_config = config_manager.get_api_config()
 
         client = None
         if use_ai:
@@ -145,9 +143,8 @@ def _render_chat_section(project_root, config, core_setting_path, overall_outlin
 
 
 def _init_chat_service(project_root, core_setting_path, overall_outline_path):
-    session_manager = SessionManager(str(project_root))
-    config_manager = GenerationConfigManager(str(project_root))
-    api_config = session_manager.get_api_config()
+    config_manager = ConfigManager(str(project_root))
+    api_config = config_manager.get_api_config()
     roles_config = config_manager.get_all_roles_config()
 
     client = MultiModelClient(api_config)
