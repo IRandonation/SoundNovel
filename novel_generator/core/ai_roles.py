@@ -9,6 +9,8 @@ from enum import Enum
 import logging
 import copy
 
+from novel_generator.config.ai_roles import AIRoleConfig, AIRolesConfig
+
 
 class AIRole(Enum):
     GENERATOR = "generator"
@@ -41,106 +43,6 @@ DEFAULT_ROLE_CONFIGS = {
 }
 
 
-@dataclass
-class RoleConfig:
-    provider: str = "doubao"
-    model: str = ""
-    temperature: float = 0.7
-    top_p: float = 0.9
-    max_tokens: int = 8000
-    system_prompt: str = ""
-    enabled: bool = True
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "provider": self.provider,
-            "model": self.model,
-            "temperature": self.temperature,
-            "top_p": self.top_p,
-            "max_tokens": self.max_tokens,
-            "system_prompt": self.system_prompt,
-            "enabled": self.enabled,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "RoleConfig":
-        return cls(
-            provider=data.get("provider", "doubao"),
-            model=data.get("model", ""),
-            temperature=data.get("temperature", 0.7),
-            top_p=data.get("top_p", 0.9),
-            max_tokens=data.get("max_tokens", 8000),
-            system_prompt=data.get("system_prompt", ""),
-            enabled=data.get("enabled", True),
-        )
-
-
-@dataclass
-class AIRolesConfig:
-    generator: RoleConfig = field(
-        default_factory=lambda: RoleConfig(
-            provider="doubao",
-            model="doubao-seed-2-0-lite-260215",
-            temperature=0.7,
-            top_p=0.9,
-            max_tokens=8000,
-        )
-    )
-    reviewer: RoleConfig = field(
-        default_factory=lambda: RoleConfig(
-            provider="deepseek",
-            model="deepseek-chat",
-            temperature=0.3,
-            top_p=0.7,
-            max_tokens=4000,
-        )
-    )
-    refiner: RoleConfig = field(
-        default_factory=lambda: RoleConfig(
-            provider="doubao",
-            model="doubao-seed-2-0-lite-260215",
-            temperature=0.5,
-            top_p=0.8,
-            max_tokens=8000,
-        )
-    )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "generator": self.generator.to_dict(),
-            "reviewer": self.reviewer.to_dict(),
-            "refiner": self.refiner.to_dict(),
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AIRolesConfig":
-        config = cls()
-        if "generator" in data:
-            config.generator = RoleConfig.from_dict(data["generator"])
-        if "reviewer" in data:
-            config.reviewer = RoleConfig.from_dict(data["reviewer"])
-        if "refiner" in data:
-            config.refiner = RoleConfig.from_dict(data["refiner"])
-        return config
-
-    def get_role_config(self, role: AIRole) -> RoleConfig:
-        if role == AIRole.GENERATOR:
-            return self.generator
-        elif role == AIRole.REVIEWER:
-            return self.reviewer
-        elif role == AIRole.REFINER:
-            return self.refiner
-        return self.generator
-
-    def set_role_config(self, role: AIRole, config: RoleConfig):
-        if role == AIRole.GENERATOR:
-            self.generator = config
-        elif role == AIRole.REVIEWER:
-            self.reviewer = config
-        elif role == AIRole.REFINER:
-            self.refiner = config
-
-
 class AIRoleManager:
     def __init__(self, config: Dict[str, Any], multi_model_client=None):
         self.config = config
@@ -150,11 +52,11 @@ class AIRoleManager:
         roles_config_data = config.get("ai_roles", {})
         self.roles_config = AIRolesConfig.from_dict(roles_config_data)
 
-    def get_role_config(self, role: AIRole) -> RoleConfig:
-        return self.roles_config.get_role_config(role)
+    def get_role_config(self, role: AIRole) -> AIRoleConfig:
+        return self.roles_config.get_role_config(role.value)
 
-    def set_role_config(self, role: AIRole, config: RoleConfig):
-        self.roles_config.set_role_config(role, config)
+    def set_role_config(self, role: AIRole, config: AIRoleConfig):
+        self.roles_config.set_role_config(role.value, config)
 
     def update_role_config(self, role: AIRole, **kwargs):
         config = self.get_role_config(role)

@@ -18,9 +18,8 @@ from novel_generator.core.emotional_arc_tracker import EmotionalArcTracker
 from novel_generator.core.ai_roles import (
     AIRoleManager,
     AIRole,
-    RoleConfig,
-    AIRolesConfig,
 )
+from novel_generator.config.ai_roles import AIRoleConfig, AIRolesConfig
 
 
 class RetryableGenerationError(Exception):
@@ -64,7 +63,7 @@ class ChapterExpander:
         for role_name in ["generator", "reviewer", "refiner"]:
             if role_name in saved_roles:
                 role_data = saved_roles[role_name]
-                role_config = RoleConfig(
+                role_config = AIRoleConfig(
                     provider=role_data.get("provider", "doubao"),
                     model=role_data.get("model", ""),
                     temperature=role_data.get("temperature", 0.7),

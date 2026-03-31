@@ -12,6 +12,8 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 import logging
 
+from novel_generator.config.ai_roles import AIRoleConfig, AIRolesConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,98 +67,6 @@ class APIConfigState:
             ),
             deepseek_models=data.get("deepseek_models", {}),
         )
-
-
-@dataclass
-class AIRoleState:
-    provider: str = "doubao"
-    model: str = ""
-    temperature: float = 0.7
-    top_p: float = 0.9
-    max_tokens: int = 8000
-    system_prompt: str = ""
-    enabled: bool = True
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AIRoleState":
-        return cls(
-            provider=data.get("provider", "doubao"),
-            model=data.get("model", ""),
-            temperature=data.get("temperature", 0.7),
-            top_p=data.get("top_p", 0.9),
-            max_tokens=data.get("max_tokens", 8000),
-            system_prompt=data.get("system_prompt", ""),
-            enabled=data.get("enabled", True),
-        )
-
-
-@dataclass
-class AIRolesState:
-    generator: AIRoleState = field(
-        default_factory=lambda: AIRoleState(
-            provider="doubao",
-            model="doubao-seed-2-0-lite-260215",
-            temperature=0.7,
-            top_p=0.9,
-            max_tokens=8000,
-        )
-    )
-    reviewer: AIRoleState = field(
-        default_factory=lambda: AIRoleState(
-            provider="deepseek",
-            model="deepseek-chat",
-            temperature=0.3,
-            top_p=0.7,
-            max_tokens=4000,
-        )
-    )
-    refiner: AIRoleState = field(
-        default_factory=lambda: AIRoleState(
-            provider="doubao",
-            model="doubao-seed-2-0-lite-260215",
-            temperature=0.5,
-            top_p=0.8,
-            max_tokens=8000,
-        )
-    )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "generator": self.generator.to_dict(),
-            "reviewer": self.reviewer.to_dict(),
-            "refiner": self.refiner.to_dict(),
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AIRolesState":
-        state = cls()
-        if "generator" in data:
-            state.generator = AIRoleState.from_dict(data["generator"])
-        if "reviewer" in data:
-            state.reviewer = AIRoleState.from_dict(data["reviewer"])
-        if "refiner" in data:
-            state.refiner = AIRoleState.from_dict(data["refiner"])
-        return state
-
-    def get_role_state(self, role_name: str) -> AIRoleState:
-        if role_name == "generator":
-            return self.generator
-        elif role_name == "reviewer":
-            return self.reviewer
-        elif role_name == "refiner":
-            return self.refiner
-        return self.generator
-
-    def set_role_state(self, role_name: str, state: AIRoleState):
-        if role_name == "generator":
-            self.generator = state
-        elif role_name == "reviewer":
-            self.reviewer = state
-        elif role_name == "refiner":
-            self.refiner = state
 
 
 @dataclass
@@ -233,7 +143,7 @@ class SessionState:
     api_config: APIConfigState = field(default_factory=APIConfigState)
     generation_state: GenerationState = field(default_factory=GenerationState)
     generation_config: GenerationConfig = field(default_factory=GenerationConfig)
-    ai_roles: AIRolesState = field(default_factory=AIRolesState)
+    ai_roles: AIRolesConfig = field(default_factory=AIRolesConfig)
     sessions: List[SessionRecord] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -261,7 +171,7 @@ class SessionState:
             generation_config=GenerationConfig.from_dict(
                 data.get("generation_config", {})
             ),
-            ai_roles=AIRolesState.from_dict(data.get("ai_roles", {})),
+            ai_roles=AIRolesConfig.from_dict(data.get("ai_roles", {})),
             sessions=[SessionRecord.from_dict(s) for s in data.get("sessions", [])],
         )
 

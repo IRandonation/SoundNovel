@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-SoundNovel（小说创作 AI Agent）是一款 AI 辅助小说写作工具，使用多种 LLM 模型（智谱 AI、豆包、DeepSeek）帮助生成长篇虚构作品，保持情节和人物发展的一致性。
+SoundNovel（小说创作 AI Agent）是一款 AI 辅助小说写作工具，使用多种 LLM 模型（豆包、DeepSeek）帮助生成长篇虚构作品，保持情节和人物发展的一致性。
 
 **技术栈**: Python 3.13+, Streamlit, Flask, PyYAML, requests  
 **依赖管理工具**: uv
@@ -380,9 +380,9 @@ class ChapterExpander:
     "default_word_count": 1500      // 默认字数目标
   },
   "roles": {
-    "generator": { "provider": "zhipu", "model": "glm-4.5-flash", "temperature": 0.7 },
+    "generator": { "provider": "doubao", "model": "doubao-lite", "temperature": 0.7 },
     "reviewer": { "provider": "deepseek", "model": "deepseek-chat", "temperature": 0.3 },
-    "refiner": { "provider": "zhipu", "model": "glm-4-long", "temperature": 0.5 }
+    "refiner": { "provider": "doubao", "model": "doubao-lite", "temperature": 0.5 }
   },
   "prompts": {
     "system_prompts": { "generator": "...", "reviewer": "...", "refiner": "..." },
