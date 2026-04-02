@@ -18,6 +18,8 @@ DEFAULT_CONFIG = {
         "max_refine_iterations": 3,
         "pass_score_threshold": 70,
         "context_chapters": 10,
+        "context_before_full": 10,
+        "context_after_full": 5,
         "default_word_count": 1500,
         "batch_size": 15,
     },

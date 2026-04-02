@@ -46,6 +46,8 @@ class ChapterExpander:
         self.max_refine_iterations = gen_config.get("max_refine_iterations", 3)
         self.pass_score_threshold = gen_config.get("pass_score_threshold", 70)
         self.context_chapters = gen_config.get("context_chapters", 10)
+        self.context_before_full = gen_config.get("context_before_full", 10)
+        self.context_after_full = gen_config.get("context_after_full", 5)
 
         self.ai_role_manager = self._init_ai_role_manager()
         self.prompt_manager = PromptManager(project_root)
@@ -92,7 +94,7 @@ class ChapterExpander:
             self.foreshadowing_tracker.load_tracking_file(
                 str(tracking_dir / "foreshadowing_tracking.yaml")
             )
-            self.emotional_arc_tracker.save_tracking_file(
+            self.emotional_arc_tracker.load_tracking_file(
                 str(tracking_dir / "emotional_arc_tracking.yaml")
             )
 
@@ -105,6 +107,7 @@ class ChapterExpander:
         chapter_num: int,
         chapter_outline: Dict[str, Any],
         previous_context: str = "",
+        after_context: str = "",
         core_setting: Dict[str, Any] = None,
         style_guide: Dict[str, Any] = None,
     ):
@@ -114,12 +117,14 @@ class ChapterExpander:
             chapter_num=chapter_num,
             chapter_outline=chapter_outline,
             previous_context=previous_context,
+            after_context=after_context,
             core_setting=core_setting or {},
             style_guide=style_guide or {},
         )
 
-        self._update_trackers(chapter_num, content, chapter_outline)
         state_card = self._generate_state_card(chapter_num, content, previous_context)
+
+        self._update_trackers(chapter_num, content, chapter_outline, state_card)
 
         self.logger.info(f"第{chapter_num}章扩写完成")
         return content, state_card
@@ -129,6 +134,7 @@ class ChapterExpander:
         chapter_num: int,
         chapter_outline: Dict[str, Any],
         previous_context: str,
+        after_context: str,
         core_setting: Dict[str, Any],
         style_guide: Dict[str, Any],
     ) -> str:
@@ -136,6 +142,7 @@ class ChapterExpander:
             chapter_num=chapter_num,
             chapter_outline=chapter_outline,
             previous_context=previous_context,
+            after_context=after_context,
             core_setting=core_setting,
             style_guide=style_guide,
         )
@@ -147,6 +154,7 @@ class ChapterExpander:
             chapter_outline=chapter_outline,
             core_setting=core_setting,
             previous_context=previous_context,
+            after_context=after_context,
             style_guide=style_guide,
         )
 
@@ -199,6 +207,7 @@ class ChapterExpander:
         chapter_outline: Dict[str, Any],
         core_setting: Dict[str, Any],
         previous_context: str,
+        after_context: str,
         style_guide: Dict[str, Any],
     ) -> str:
         prompt = self.prompt_manager.build_first_refine_prompt(
@@ -206,6 +215,7 @@ class ChapterExpander:
             chapter_outline=chapter_outline,
             core_setting=core_setting,
             previous_context=previous_context,
+            after_context=after_context,
             content=content,
         )
 
@@ -220,6 +230,7 @@ class ChapterExpander:
         chapter_num: int,
         chapter_outline: Dict[str, Any],
         previous_context: str,
+        after_context: str,
         core_setting: Dict[str, Any],
         style_guide: Dict[str, Any],
     ) -> str:
@@ -239,6 +250,7 @@ class ChapterExpander:
             chapter_num=chapter_num,
             core_setting=core_setting,
             previous_context=previous_context,
+            after_context=after_context,
             chapter_outline=chapter_outline,
             character_context=character_context,
             foreshadowing_context=foreshadowing_context,
@@ -346,9 +358,18 @@ class ChapterExpander:
         return self.settings.get_default_word_count()
 
     def _update_trackers(
-        self, chapter_num: int, content: str, chapter_outline: Dict[str, Any]
+        self,
+        chapter_num: int,
+        content: str,
+        chapter_outline: Dict[str, Any],
+        state_card: Dict[str, Any] = None,
     ):
-        self.character_tracker.update_from_chapter(chapter_num, content)
+        self.character_tracker.update_from_chapter(chapter_num, content, state_card)
+
+        removed = self.character_tracker.cleanup_characters(chapter_num, state_card)
+        if removed:
+            self.logger.info(f"清理角色: {', '.join(removed)}")
+
         self.foreshadowing_tracker.plant_foreshadowing(chapter_num, content)
         self.foreshadowing_tracker.check_recovery(chapter_num, content, chapter_outline)
         self.emotional_arc_tracker.analyze_chapter(
@@ -421,6 +442,35 @@ class ChapterExpander:
         self.logger.info(f"章节已保存: {file_path}")
         return str(file_path)
 
+    def load_existing_chapter(self, chapter_num: int, draft_dir: str = None) -> str:
+        """读取已存在的章节内容"""
+        output_path = Path(draft_dir or self.settings.path_config.draft_dir)
+        file_path = output_path / f"第{chapter_num:04d}章.txt"
+
+        if file_path.exists():
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception as e:
+                self.logger.warning(f"读取章节 {chapter_num} 失败: {e}")
+        return ""
+
+    def get_existing_chapters(self, draft_dir: str = None) -> List[int]:
+        """获取已存在的章节列表"""
+        output_path = Path(draft_dir or self.settings.path_config.draft_dir)
+        existing = []
+
+        if output_path.exists():
+            for f in output_path.glob("第*章.txt"):
+                try:
+                    match = re.search(r"第(\d+)章", f.name)
+                    if match:
+                        existing.append(int(match.group(1)))
+                except:
+                    continue
+
+        return sorted(existing)
+
     def expand_multiple_chapters(
         self,
         outline: Dict[str, Any],
@@ -433,6 +483,8 @@ class ChapterExpander:
         results = []
         context_parts = []
 
+        existing_chapters = self.get_existing_chapters()
+
         for chapter_num in range(start_chapter, end_chapter + 1):
             chapter_key = f"第{chapter_num}章"
             chapter_outline = outline.get(chapter_key, {})
@@ -441,22 +493,45 @@ class ChapterExpander:
                 self.logger.warning(f"未找到第{chapter_num}章的大纲，跳过")
                 continue
 
+            previous_full_count = min(len(context_parts), self.context_before_full)
             previous_context = (
-                "\n\n".join(context_parts[-context_window:]) if context_parts else ""
+                "\n\n".join(context_parts[-previous_full_count:])
+                if context_parts
+                else ""
             )
+
+            after_context = ""
+            if chapter_num == end_chapter:
+                after_chapters = [ch for ch in existing_chapters if ch > end_chapter]
+                if after_chapters:
+                    take_count = min(len(after_chapters), self.context_after_full)
+                    after_chapters_to_read = after_chapters[:take_count]
+
+                    after_parts = []
+                    for ch in after_chapters_to_read:
+                        content = self.load_existing_chapter(ch)
+                        if content:
+                            after_parts.append(f"【第{ch}章】\n{content}")
+
+                    if after_parts:
+                        after_context = "\n\n".join(after_parts)
+                        self.logger.info(
+                            f"第{chapter_num}章检测到后文，纳入第{after_chapters_to_read[0]}-{after_chapters_to_read[-1]}章作为上下文"
+                        )
 
             try:
                 content, state_card = self.expand_chapter(
                     chapter_num=chapter_num,
                     chapter_outline=chapter_outline,
                     previous_context=previous_context,
+                    after_context=after_context,
                     core_setting=core_setting or {},
                     style_guide=style_guide or {},
                 )
 
                 file_path = self.save_chapter(chapter_num, content)
 
-                context_parts.append(f"【第{chapter_num}章摘要】\n{content[:500]}...")
+                context_parts.append(f"【第{chapter_num}章】\n{content}")
 
                 results.append(
                     {
