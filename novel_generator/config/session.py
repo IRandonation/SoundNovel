@@ -305,7 +305,7 @@ class SessionManager:
         system_prompt: Optional[str] = None,
         enabled: Optional[bool] = None,
     ) -> bool:
-        role_state = self.state.ai_roles.get_role_state(role_name)
+        role_state = self.state.ai_roles.get_role_config(role_name)
         if provider is not None:
             role_state.provider = provider
         if model is not None:
