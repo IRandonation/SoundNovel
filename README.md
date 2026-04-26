@@ -10,7 +10,7 @@
 - **多模型支持**：豆包、DeepSeek多模型可独立配置
 - **可配置Prompt系统**：所有prompt模板均可通过JSON配置文件管理
 - **会话状态管理**：自动记录进度，支持断点续写
-- **双模式支持**：GUI 图形界面 + CLI 命令行，自由选择
+- **Agent 对话模式**：自然语言交互，更智能的创作体验
 
 ## 三角色协作流程
 
@@ -64,25 +64,16 @@ SoundNovel/
 │   └── session.json           # 会话状态和API密钥
 ├── 06_log/                    # [生成] 日志目录
 ├── docs/                      # 项目文档
-├── novel_generator/           # 核心代码包
+├── novel_generator/             # 核心代码包
+│   ├── agent/                 # Agent 对话模式
 │   ├── cli/                   # CLI 命令模块
-│   │   └── commands/
-│   │       └── settings_cmd.py  # 配置管理命令
 │   ├── config/                # 配置与会话管理
-│   │   ├── generation_config.py # 配置管理器
-│   │   └── session.py         # 会话状态管理
 │   ├── core/                  # 核心逻辑
-│   │   ├── chapter_expander.py  # 章节扩写(三角色流程)
-│   │   ├── ai_roles.py         # AI角色定义
-│   │   ├── character_tracker.py # 人物追踪
-│   │   ├── foreshadowing_tracker.py # 伏笔追踪
-│   │   └── emotional_arc_tracker.py # 情感弧线追踪
 │   ├── utils/                 # 通用工具
 │   └── templates/             # 模板文件
-├── soundnovel.py              # 统一入口（CLI/GUI）
-├── gui_app.py                 # GUI 主程序
+├── soundnovel.py              # 统一入口
 ├── build_exe.py               # 打包脚本
-└── pyproject.toml             # 依赖声明
+└── pyproject.toml           # 依赖声明
 ```
 
 ## 安装与环境
@@ -99,21 +90,9 @@ uv sync
 
 ## 使用方式
 
-本项目提供 **GUI 图形界面** 和 **CLI 命令行** 两种使用方式。
+本项目提供 **CLI 命令行** 和 **Agent 对话模式** 两种使用方式。
 
-### 方式一：GUI 图形界面（推荐新手）
-
-在浏览器中操作，可视化编辑设定、生成大纲、扩写章节。
-
-```bash
-# 方法 1：使用统一入口
-python soundnovel.py gui
-
-# 方法 2：直接使用 streamlit
-uv run streamlit run gui_app.py
-```
-
-### 方式二：CLI 命令行（适合熟练用户）
+### 方式一：CLI 命令行（推荐）
 
 在终端中操作，高效快捷。
 
@@ -157,9 +136,26 @@ python soundnovel.py cli settings --max-iterations 5 --pass-score 75
 # 配置角色模型
 python soundnovel.py cli settings --role generator --provider deepseek --model deepseek-chat
 
+# 启动 Agent 对话模式
+python soundnovel.py cli agent
+
 # 查看帮助
 python soundnovel.py --help
 python soundnovel.py cli --help
+```
+
+#### Agent 对话模式
+
+```bash
+# 启动对话模式
+python soundnovel.py cli agent
+
+# 交互示例
+> 生成第5章
+> 查看状态
+> 张三现在在哪
+> 帮助
+> 退出
 ```
 
 ### 快速开始
@@ -197,18 +193,14 @@ python soundnovel.py cli continue
 打包成 `.exe` 分享给其他人：
 
 ```bash
-# 构建 GUI 版本（默认）
+# 构建 CLI 版本
 python build_exe.py
 
-# 构建 CLI 版本
-python build_exe.py --cli
-
-# 同时构建两者
-python build_exe.py --both
+# 清理构建文件
+python build_exe.py --clean
 ```
 
 输出：
-- `dist/SoundNovelAI_GUI.zip` - GUI 版本
 - `dist/SoundNovelAI_CLI.zip` - CLI 版本
 
 ## 隐私与安全

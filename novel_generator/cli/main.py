@@ -184,6 +184,9 @@ def create_parser() -> argparse.ArgumentParser:
     
     from novel_generator.cli.commands.review_cmd import add_parser as add_review_parser
     add_review_parser(subparsers)
+
+    from novel_generator.cli.commands.agent import add_parser as add_agent_parser
+    add_agent_parser(subparsers)
     
     return parser
 

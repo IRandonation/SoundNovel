@@ -6,7 +6,7 @@
 
 SoundNovel（小说创作 AI Agent）是一款 AI 辅助小说写作工具，使用多种 LLM 模型（豆包、DeepSeek）帮助生成长篇虚构作品，保持情节和人物发展的一致性。
 
-**技术栈**: Python 3.13+, Streamlit, Flask, PyYAML, requests  
+**技术栈**: Python 3.13+, Flask, PyYAML, requests  
 **依赖管理工具**: uv
 
 ---
@@ -39,7 +39,7 @@ DEFAULT_SYSTEM_PROMPTS = {
 
 **可配置位置**:
 - `05_script/generation_config.json` → `prompts.system_prompts`
-- 运行时可通过CLI/GUI修改
+- 运行时可通过CLI修改
 
 #### 2. 生成Prompt (章节扩写)
 
@@ -136,19 +136,12 @@ python soundnovel.py cli init                           # 初始化项目
 python soundnovel.py cli outline                        # 生成章节大纲
 python soundnovel.py cli expand --chapter 1             # 扩写指定章节
 python soundnovel.py cli expand --start 1 --end 10      # 扩写章节范围
+python soundnovel.py cli agent                          # 启动 Agent 对话模式
 
 # 方式 2：使用模块方式（等效）
 uv run python -m novel_generator.cli init
 uv run python -m novel_generator.cli outline
 uv run python -m novel_generator.cli expand --chapter 1
-
-# ========== GUI 模式（图形界面）==========
-
-# 方式 1：使用统一入口
-python soundnovel.py gui
-
-# 方式 2：直接使用 streamlit
-uv run streamlit run gui_app.py
 
 # ========== 查看帮助 ==========
 python soundnovel.py --help
@@ -445,14 +438,14 @@ SoundNovel/
 ├── 04_prompt/                 # 提示词模板和风格指南
 ├── 05_script/                 # 配置文件（config.json）
 ├── 06_log/                    # 日志文件
-├── novel_generator/           # 核心包
+├── novel_generator/             # 核心包
+│   ├── agent/                 # Agent 对话模式
 │   ├── cli/                   # CLI 命令模块
 │   ├── core/                  # 核心业务逻辑
 │   ├── config/                # 配置（数据类）
 │   ├── utils/                 # 工具（API 客户端、日志、文件处理）
 │   └── templates/             # 模板文件
 ├── soundnovel.py              # 统一入口
-├── gui_app.py                 # Streamlit GUI 入口
 ├── build_exe.py               # 打包脚本
 ├── pyproject.toml             # 依赖
 └── uv.lock                    # 依赖锁定文件

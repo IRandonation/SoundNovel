@@ -5,15 +5,12 @@ SoundNovel 打包脚本
 用于生成可执行文件 (.exe)，方便分享给没有 Python 环境的用户。
 
 使用方法:
-    python build_exe.py              # 构建 GUI 版本
-    python build_exe.py --cli        # 构建 CLI 版本
-    python build_exe.py --both       # 同时构建 GUI 和 CLI
+    python build_exe.py              # 构建 CLI 版本
     python build_exe.py --clean      # 清理构建文件
 
 输出:
-    dist/SoundNovelAI_GUI/       # GUI 版本 (包含 Streamlit)
     dist/SoundNovelAI_CLI/       # CLI 版本
-    dist/SoundNovelAI_*.zip      # 打包好的 ZIP 文件
+    dist/SoundNovelAI_CLI.zip    # 打包好的 ZIP 文件
 """
 
 import PyInstaller.__main__
@@ -21,7 +18,6 @@ import os
 import shutil
 import argparse
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_all
 
 
 def get_project_root() -> Path:
@@ -33,25 +29,25 @@ def clean_build():
     """清理构建文件"""
     project_root = get_project_root()
     dirs_to_remove = ['build', 'dist']
-    
+
     for dir_name in dirs_to_remove:
         dir_path = project_root / dir_name
         if dir_path.exists():
             print(f"🗑️  删除 {dir_path}")
             shutil.rmtree(dir_path)
-    
+
     # 删除 spec 文件
     for spec_file in project_root.glob("*.spec"):
         print(f"🗑️  删除 {spec_file}")
         spec_file.unlink()
-    
+
     print("✅ 清理完成")
 
 
 def copy_project_resources(dist_dir: Path):
     """复制项目资源文件到输出目录"""
     project_root = get_project_root()
-    
+
     # 要复制的目录
     dirs_to_copy = [
         ("01_source", "01_source"),
@@ -59,49 +55,48 @@ def copy_project_resources(dist_dir: Path):
         ("05_script", "05_script"),
         ("novel_generator", "novel_generator"),
     ]
-    
+
     # 要创建的空目录
     dirs_to_create = ["02_outline", "03_draft", "06_log"]
-    
+
     # 要复制的单独文件
     files_to_copy = [
         ("soundnovel.py", "soundnovel.py"),
-        ("gui_app.py", "gui_app.py"),
         ("README.md", "README.md"),
     ]
-    
+
     print("📂 复制项目资源...")
-    
+
     # 复制目录
     for src_name, dst_name in dirs_to_copy:
         src_path = project_root / src_name
         dst_path = dist_dir / dst_name
-        
+
         if src_path.exists():
             if dst_path.exists():
                 shutil.rmtree(dst_path)
             shutil.copytree(src_path, dst_path)
             print(f"   ✅ 复制目录 {src_name}")
-    
+
     # 创建空目录
     for dir_name in dirs_to_create:
         (dist_dir / dir_name).mkdir(parents=True, exist_ok=True)
         print(f"   ✅ 创建目录 {dir_name}")
-    
+
     # 复制单独文件
     for src_name, dst_name in files_to_copy:
         src_path = project_root / src_name
         if src_path.exists():
             shutil.copy2(src_path, dist_dir / dst_name)
             print(f"   ✅ 复制文件 {src_name}")
-    
+
     # 处理配置文件
     config_example = project_root / "05_script" / "config.example.json"
     config_dst = dist_dir / "05_script" / "config.json"
     if config_example.exists() and not config_dst.exists():
         shutil.copy(config_example, config_dst)
         print("   📝 创建默认 config.json")
-    
+
     # 处理源文件模板
     for f_name in ["core_setting", "overall_outline"]:
         example = project_root / "01_source" / f"{f_name}.example.yaml"
@@ -111,76 +106,20 @@ def copy_project_resources(dist_dir: Path):
             print(f"   📝 创建默认 {f_name}.yaml")
 
 
-def build_gui():
-    """构建 GUI 版本"""
-    print("\n" + "=" * 50)
-    print("🔨 开始构建 GUI 版本")
-    print("=" * 50 + "\n")
-    
-    project_root = get_project_root()
-    
-    # 收集 streamlit 数据
-    datas = []
-    hiddenimports = []
-    
-    st_datas, st_binaries, st_hiddenimports = collect_all('streamlit')
-    datas.extend(st_datas)
-    hiddenimports.extend(st_hiddenimports)
-    
-    # 添加项目文件
-    datas.append(('gui_app.py', '.'))
-    datas.append((str(project_root / 'novel_generator'), 'novel_generator'))
-    
-    # 确保必要的库被包含
-    hiddenimports.extend([
-        'novel_generator', 'novel_generator.cli',
-        'novel_generator.cli.commands', 'novel_generator.utils.common',
-        'yaml', 'requests', 'json', 'logging', 'volcenginesdkarkruntime',
-    ])
-    
-    # 构建参数
-    args = [
-        'run_gui.py',
-        '--name=SoundNovelAI',
-        '--onedir',
-        '--clean',
-        '--noconfirm',
-        '--console',
-    ]
-    
-    for src, dst in datas:
-        args.append(f'--add-data={src}{os.pathsep}{dst}')
-    
-    for name in hiddenimports:
-        args.append(f'--hidden-import={name}')
-    
-    # 执行构建
-    print("🚀 执行 PyInstaller...")
-    PyInstaller.__main__.run(args)
-    
-    # 复制资源到输出目录
-    dist_dir = project_root / "dist" / "SoundNovelAI"
-    if dist_dir.exists():
-        copy_project_resources(dist_dir)
-        create_launcher_scripts(dist_dir, mode='gui')
-        create_zip(dist_dir, "SoundNovelAI_GUI")
-        print("\n✅ GUI 版本构建完成！")
-
-
 def build_cli():
     """构建 CLI 版本"""
     print("\n" + "=" * 50)
     print("🔨 开始构建 CLI 版本")
     print("=" * 50 + "\n")
-    
+
     project_root = get_project_root()
-    
+
     hiddenimports = [
         'novel_generator', 'novel_generator.cli',
         'novel_generator.cli.commands', 'novel_generator.utils.common',
         'yaml', 'requests', 'json', 'logging', 'volcenginesdkarkruntime',
     ]
-    
+
     args = [
         'soundnovel.py',
         '--name=SoundNovelCLI',
@@ -189,35 +128,24 @@ def build_cli():
         '--noconfirm',
         '--console',
     ]
-    
+
     for name in hiddenimports:
         args.append(f'--hidden-import={name}')
-    
+
     print("🚀 执行 PyInstaller...")
     PyInstaller.__main__.run(args)
-    
+
     dist_dir = project_root / "dist" / "SoundNovelCLI"
     if dist_dir.exists():
         copy_project_resources(dist_dir)
-        create_launcher_scripts(dist_dir, mode='cli')
+        create_launcher_scripts(dist_dir)
         create_zip(dist_dir, "SoundNovelAI_CLI")
         print("\n✅ CLI 版本构建完成！")
 
 
-def create_launcher_scripts(dist_dir: Path, mode: str):
+def create_launcher_scripts(dist_dir: Path):
     """创建启动器脚本"""
-    if mode == 'gui':
-        bat_content = '''@echo off
-chcp 65001 >nul
-echo ===================================
-echo   SoundNovel AI - 小说创作助手
-echo ===================================
-echo.
-echo 正在启动图形界面...
-start "" "SoundNovelAI.exe"
-'''
-    else:
-        bat_content = '''@echo off
+    bat_content = '''@echo off
 chcp 65001 >nul
 echo ===================================
 echo   SoundNovel AI - 小说创作助手
@@ -227,10 +155,11 @@ echo 使用方式:
 echo   初始化: SoundNovelCLI.exe cli init
 echo   生成大纲: SoundNovelCLI.exe cli outline
 echo   扩写: SoundNovelCLI.exe cli expand --chapter 1
+echo   Agent模式: SoundNovelCLI.exe cli agent
 echo.
 "SoundNovelCLI.exe" %*
 '''
-    
+
     (dist_dir / "启动程序.bat").write_text(bat_content, encoding='utf-8')
     print("   📝 创建启动脚本")
 
@@ -238,10 +167,10 @@ echo.
 def create_zip(dist_dir: Path, zip_name: str):
     """创建 ZIP 压缩包"""
     print("\n📦 创建 ZIP 压缩包...")
-    
+
     project_root = get_project_root()
     zip_base = project_root / "dist" / zip_name
-    
+
     try:
         zip_path = shutil.make_archive(
             base_name=str(zip_base),
@@ -260,36 +189,24 @@ def main():
         description='SoundNovel 打包脚本',
         epilog="""
 使用示例:
-    python build_exe.py           # 只构建 GUI
-    python build_exe.py --cli     # 只构建 CLI
-    python build_exe.py --both    # 同时构建两者
+    python build_exe.py           # 构建 CLI 版本
     python build_exe.py --clean   # 清理构建文件
         """
     )
-    
-    parser.add_argument('--cli', action='store_true', help='只构建 CLI')
-    parser.add_argument('--gui', action='store_true', help='只构建 GUI')
-    parser.add_argument('--both', action='store_true', help='同时构建两者')
+
     parser.add_argument('--clean', action='store_true', help='清理构建文件')
-    
+
     args = parser.parse_args()
-    
+
     if args.clean:
         clean_build()
         return
-    
-    build_gui_flag = args.gui or args.both or (not args.cli)
-    build_cli_flag = args.cli or args.both
-    
+
     print("🚀 SoundNovel 打包工具")
     print("=" * 50)
-    
-    if build_gui_flag:
-        build_gui()
-    
-    if build_cli_flag:
-        build_cli()
-    
+
+    build_cli()
+
     print("\n" + "=" * 50)
     print("🎉 构建完成！")
     print("=" * 50)
