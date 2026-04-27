@@ -1,0 +1,173 @@
+name: "power_up_satisfaction"
+
+description: "实力提升爽点专用Prompt模板"
+
+satisfaction_type: "power_up"
+
+# 实力提升CHECKLIST参考
+checklist:
+  - 突破契机: "突破的契机和时机"
+  - 能量积累: "能量汇聚积累的过程"
+  - 突破过程: "突破过程中的描写"
+  - 天地异象: "突破引起的天地异象"
+  - 实力展现: "突破后实力的具体变化"
+  - 旁人反应: "他人对主角突破的反应"
+
+# 实力提升阶段
+template: |
+  【任务】撰写实力提升爽点场景
+
+  1. 当前境界：
+  {current_realm}
+
+  2. 目标境界：
+  {target_realm}
+
+  3. 突破背景：
+  {breakthrough_background}
+
+  4. 突破环境：
+  {breakthrough_location}
+
+  5. 可能的围观者：
+  {observers}
+
+  【实力提升6阶段结构】
+
+  ## 阶段1：契机触发
+  - 主角面临的瓶颈/危机/感悟
+  - 突破契机的具体触发点
+  - 内心活动：从困惑到顿悟的转变
+  - 环境配合：外部因素如何促成契机
+
+  ## 阶段2：能量汇聚
+  - 天地灵气/能量开始向主角聚集
+  - 主角体内能量的变化
+  - 具体的感官描写：温度、压力、流动感
+  - 积累过程的紧张感营造
+
+  ## 阶段3：突破冲击
+  - 冲破瓶颈的关键时刻
+  - 身体/灵魂的蜕变描写
+  - 痛苦与坚持的张力
+  - 关键时刻的决心和意志
+
+  ## 阶段4：天地异象
+  - 突破引发的异象开始显现
+  - 异象的具体描写（彩霞、雷鸣、灵兽等）
+  - 异象的范围和强度
+  - 环境对异象的反应
+
+  ## 阶段5：境界稳固
+  - 新境界的感悟和适应
+  - 力量的具体变化
+  - 与新境界的第一次互动
+  - 稳固境界的过程
+
+  ## 阶段6：实力展现
+  - 主角体验新力量的场景
+  - 旁观者的震惊和反应
+  - 新旧实力的对比
+  - 突破带来的实际收益
+
+  【写作法则】
+  1. 契机必须合理：不是"突然突破"，而是量变引发质变
+  2. 积累必须有层次：能量汇聚从小到大，从局部到整体
+  3. 突破必须有代价：痛苦、风险、时间的紧迫感
+  4. 异象必须壮观：用具体的视觉、听觉、触觉描写
+  5. 提升必须可感知：新旧实力的对比要具体
+
+  【情绪曲线】
+  - 阶段1：困惑 → 明悟（希望）
+  - 阶段2：紧张 → 充盈（期待）
+  - 阶段3：痛苦 → 突破（爆发）
+  - 阶段4：震撼 → 敬畏（高潮）
+  - 阶段5：新奇 → 掌控（满足）
+  - 阶段6：自信 → 威慑（收尾）
+
+  【字数分配建议】
+  - 阶段1（契机）：{word_stage1}字 ({word_stage1_pct}%)
+  - 阶段2（汇聚）：{word_stage2}字 ({word_stage2_pct}%)
+  - 阶段3（突破）：{word_stage3}字 ({word_stage3_pct}%)
+  - 阶段4（异象）：{word_stage4}字 ({word_stage4_pct}%)
+  - 阶段5（稳固）：{word_stage5}字 ({word_stage5_pct}%)
+  - 阶段6（展现）：{word_stage6}字 ({word_stage6_pct}%)
+  总字数：{total_word_count}字
+
+  【境界描写要点】
+  - 每个境界应有独特的感知特征
+  - 突破时的感受：如"视野突然开阔""听力突然敏锐"
+  - 新能力的第一体验：如"第一次御空飞行"
+  - 对旧事物的全新认知：如"曾经强大的对手，现在不过如此"
+
+  【禁忌】
+  - 禁止突破过于轻易（必须有张力和风险）
+  - 禁止异象描写模板化（要有独特性）
+  - 禁止实力提升过于抽象（必须有具体表现）
+  - 禁止使用"境界突然突破"等弱化过程的描述
+
+  请直接输出6阶段正文。
+
+variables:
+  - current_realm
+  - target_realm
+  - breakthrough_background
+  - breakthrough_location
+  - observers
+  - word_stage1
+  - word_stage1_pct
+  - word_stage2
+  - word_stage2_pct
+  - word_stage3
+  - word_stage3_pct
+  - word_stage4
+  - word_stage4_pct
+  - word_stage5
+  - word_stage5_pct
+  - word_stage6
+  - word_stage6_pct
+  - total_word_count
+
+# 默认字数分配
+default_word_distribution:
+  stage1: 10  # 10% - 契机
+  stage2: 20  # 20% - 汇聚
+  stage3: 25  # 25% - 突破（重点）
+  stage4: 20  # 20% - 异象
+  stage5: 10  # 10% - 稳固
+  stage6: 15  # 15% - 展现
+
+# 境界特征词库
+realm_keywords:
+  qi_gathering:
+    - "气感"
+    - "经脉"
+    - "丹田"
+    - "灵气"
+  foundation:
+    - "筑基"
+    - "道台"
+    - "根基"
+    - "稳固"
+  golden_core:
+    - "金丹"
+    - "丹成"
+    - "九转"
+    - "圆满"
+  nascent_soul:
+    - "元婴"
+    - "神魂"
+    - "出窍"
+    - "神识"
+
+descriptive_patterns:
+  energy_sensation:
+    - "如江河奔涌"
+    - "如火山喷发"
+    - "如雷霆万钧"
+    - "如百川归海"
+  transformation:
+    - "脱胎换骨"
+    - "洗髓伐骨"
+    - "涅槃重生"
+    - "破茧成蝶"

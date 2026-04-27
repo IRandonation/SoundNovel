@@ -1,6 +1,6 @@
 """
-章节扩写器
-使用三角色流程：生成者 -> 评审者 -> 润色者
+章节扩写器（简化版）
+基于场景级扩写的新流程
 """
 
 import re
@@ -11,22 +11,17 @@ from typing import Dict, Any, List
 from novel_generator.config.settings import Settings
 from novel_generator.config.generation_config import GenerationConfigManager
 from novel_generator.utils.multi_model_client import MultiModelClient
-from novel_generator.utils.prompt_manager import PromptManager
+from novel_generator.core.ai_roles import AIRoleManager, AIRole
 from novel_generator.core.character_tracker import CharacterTracker
 from novel_generator.core.foreshadowing_tracker import ForeshadowingTracker
 from novel_generator.core.emotional_arc_tracker import EmotionalArcTracker
-from novel_generator.core.ai_roles import (
-    AIRoleManager,
-    AIRole,
-)
-from novel_generator.config.ai_roles import AIRoleConfig, AIRolesConfig
-
-
-class RetryableGenerationError(Exception):
-    pass
+from novel_generator.core.scene_expander import SceneExpander
+from novel_generator.core.scene_assembler import SceneAssembler
 
 
 class ChapterExpander:
+    """章节扩写器 - 基于场景级扩写的简化流程"""
+
     def __init__(
         self,
         config: Dict[str, Any],
@@ -41,26 +36,26 @@ class ChapterExpander:
         self.multi_model_client = multi_model_client or MultiModelClient(config)
 
         self.gen_config_manager = GenerationConfigManager(project_root)
-        gen_config = self.gen_config_manager.get_generation_config()
 
-        self.max_refine_iterations = gen_config.get("max_refine_iterations", 3)
-        self.pass_score_threshold = gen_config.get("pass_score_threshold", 70)
-        self.context_chapters = gen_config.get("context_chapters", 10)
-        self.context_before_full = gen_config.get("context_before_full", 10)
-        self.context_after_full = gen_config.get("context_after_full", 5)
+        # 初始化AI角色管理器
+        self.ai_role_manager = AIRoleManager(config, self.multi_model_client)
+        self._init_ai_roles()
 
-        self.ai_role_manager = self._init_ai_role_manager()
-        self.prompt_manager = PromptManager(project_root)
-
+        # 初始化追踪器
         self.character_tracker = CharacterTracker(config)
         self.foreshadowing_tracker = ForeshadowingTracker(config)
         self.emotional_arc_tracker = EmotionalArcTracker(config)
-
         self._init_trackers()
 
-    def _init_ai_role_manager(self) -> AIRoleManager:
-        manager = AIRoleManager(self.config, self.multi_model_client)
+        # 初始化场景扩写器和组装器
+        self.scene_expander = SceneExpander(config, self.ai_role_manager)
+        self.scene_assembler = SceneAssembler()
+
+    def _init_ai_roles(self):
+        """初始化AI角色配置"""
         saved_roles = self.gen_config_manager.get_all_roles_config()
+
+        from novel_generator.config.ai_roles import AIRoleConfig
 
         for role_name in ["generator", "reviewer", "refiner"]:
             if role_name in saved_roles:
@@ -74,11 +69,10 @@ class ChapterExpander:
                     system_prompt=role_data.get("system_prompt", ""),
                     enabled=role_data.get("enabled", True),
                 )
-                manager.roles_config.set_role_config(AIRole(role_name), role_config)
-
-        return manager
+                self.ai_role_manager.set_role_config(AIRole(role_name), role_config)
 
     def _init_trackers(self):
+        """初始化追踪器"""
         try:
             core_setting_path = Path(self.settings.path_config.core_setting_file)
             if core_setting_path.exists():
@@ -110,252 +104,130 @@ class ChapterExpander:
         after_context: str = "",
         core_setting: Dict[str, Any] = None,
         style_guide: Dict[str, Any] = None,
-    ):
+    ) -> tuple[str, Dict[str, Any]]:
+        """
+        简化版章节扩写
+
+        Args:
+            chapter_num: 章节编号
+            chapter_outline: 章节大纲
+            previous_context: 前文上下文
+            after_context: 后文上下文
+            core_setting: 核心设定
+            style_guide: 风格指南
+
+        Returns:
+            (章节内容, 状态卡)
+        """
         self.logger.info(f"开始扩写第{chapter_num}章...")
 
-        content = self._generate_with_review_cycle(
-            chapter_num=chapter_num,
-            chapter_outline=chapter_outline,
-            previous_context=previous_context,
-            after_context=after_context,
-            core_setting=core_setting or {},
-            style_guide=style_guide or {},
+        # 1. 读取场景列表
+        scenes = chapter_outline.get("场景列表", [])
+        if not scenes:
+            self.logger.warning(f"第{chapter_num}章没有场景列表，尝试使用整章大纲")
+            scenes = [{"场景ID": f"场景{chapter_num}-1", "节拍设计": {"钩子": chapter_outline.get("核心钩子", ""), "落点": chapter_outline.get("章节落点", "")}, "字数目标": self.settings.get_default_word_count()}]
+
+        # 2. 逐个扩写场景
+        scene_contents = []
+        for scene in scenes:
+            content = self.scene_expander.expand_scene(scene)
+            scene_contents.append(content)
+
+        # 3. 组装章节
+        chapter_content = self.scene_assembler.assemble_chapter(
+            scene_contents, chapter_outline
         )
 
-        state_card = self._generate_state_card(chapter_num, content, previous_context)
+        # 4. 轻量级润色（编码实现）
+        chapter_content = self._quick_polish(chapter_content)
 
-        self._update_trackers(chapter_num, content, chapter_outline, state_card)
+        # 5. 生成state_card
+        state_card = self._generate_state_card(chapter_num, chapter_content, previous_context)
+
+        # 6. 更新追踪器
+        self._update_trackers(chapter_num, chapter_content, chapter_outline, state_card)
 
         self.logger.info(f"第{chapter_num}章扩写完成")
-        return content, state_card
+        return chapter_content, state_card
 
-    def _generate_with_review_cycle(
-        self,
-        chapter_num: int,
-        chapter_outline: Dict[str, Any],
-        previous_context: str,
-        after_context: str,
-        core_setting: Dict[str, Any],
-        style_guide: Dict[str, Any],
-    ) -> str:
-        content = self._generate_chapter(
-            chapter_num=chapter_num,
-            chapter_outline=chapter_outline,
-            previous_context=previous_context,
-            after_context=after_context,
-            core_setting=core_setting,
-            style_guide=style_guide,
-        )
+    def _quick_polish(self, content: str) -> str:
+        """
+        轻量级润色（编码实现，无需API调用）
 
-        self.logger.info(f"第{chapter_num}章生成完成，执行首次润色...")
-        content = self._first_refine_chapter(
-            content=content,
-            chapter_num=chapter_num,
-            chapter_outline=chapter_outline,
-            core_setting=core_setting,
-            previous_context=previous_context,
-            after_context=after_context,
-            style_guide=style_guide,
-        )
+        Args:
+            content: 原始内容
 
-        review_result = self._review_chapter(
-            content=content,
-            chapter_num=chapter_num,
-            chapter_outline=chapter_outline,
-            core_setting=core_setting,
-            style_guide=style_guide,
-        )
-
-        if review_result.get("passed", False):
-            self.logger.info(f"第{chapter_num}章首次审查通过")
-            return content
-
-        for iteration in range(self.max_refine_iterations):
-            self.logger.info(
-                f"第{chapter_num}章审查未通过 (总分: {review_result.get('total_score', 0)})，进行问题修复润色..."
-            )
-
-            content = self._refine_chapter(
-                content=content,
-                chapter_num=chapter_num,
-                chapter_outline=chapter_outline,
-                review_result=review_result,
-                style_guide=style_guide,
-            )
-
-            review_result = self._review_chapter(
-                content=content,
-                chapter_num=chapter_num,
-                chapter_outline=chapter_outline,
-                core_setting=core_setting,
-                style_guide=style_guide,
-            )
-
-            if review_result.get("passed", False):
-                self.logger.info(f"第{chapter_num}章在第{iteration + 2}次审查后通过")
-                return content
-
-        self.logger.warning(
-            f"第{chapter_num}章经过{self.max_refine_iterations + 1}次润色仍未达标，使用当前版本"
-        )
-        return content
-
-    def _first_refine_chapter(
-        self,
-        content: str,
-        chapter_num: int,
-        chapter_outline: Dict[str, Any],
-        core_setting: Dict[str, Any],
-        previous_context: str,
-        after_context: str,
-        style_guide: Dict[str, Any],
-    ) -> str:
-        prompt = self.prompt_manager.build_first_refine_prompt(
-            chapter_num=chapter_num,
-            chapter_outline=chapter_outline,
-            core_setting=core_setting,
-            previous_context=previous_context,
-            after_context=after_context,
-            content=content,
-        )
-
-        response = self.ai_role_manager.chat_completion(
-            role=AIRole.REFINER, messages=[{"role": "user", "content": prompt}]
-        )
-
-        return self._clean_response(response)
-
-    def _generate_chapter(
-        self,
-        chapter_num: int,
-        chapter_outline: Dict[str, Any],
-        previous_context: str,
-        after_context: str,
-        core_setting: Dict[str, Any],
-        style_guide: Dict[str, Any],
-    ) -> str:
-        word_count_target = self._extract_word_count(chapter_outline)
-
-        character_context = self.character_tracker.get_context_for_chapter(
-            chapter_num, chapter_outline
-        )
-        foreshadowing_context = self.foreshadowing_tracker.get_context_for_chapter(
-            chapter_num
-        )
-        emotional_context = self.emotional_arc_tracker.get_context_for_chapter(
-            chapter_num
-        )
-
-        prompt = self.prompt_manager.build_generation_prompt(
-            chapter_num=chapter_num,
-            core_setting=core_setting,
-            previous_context=previous_context,
-            after_context=after_context,
-            chapter_outline=chapter_outline,
-            character_context=character_context,
-            foreshadowing_context=foreshadowing_context,
-            emotional_context=emotional_context,
-            style_guide=style_guide,
-            word_count=word_count_target,
-        )
-
-        response = self.ai_role_manager.chat_completion(
-            role=AIRole.GENERATOR, messages=[{"role": "user", "content": prompt}]
-        )
-
-        return self._clean_response(response)
-
-    def _review_chapter(
-        self,
-        content: str,
-        chapter_num: int,
-        chapter_outline: Dict[str, Any],
-        core_setting: Dict[str, Any],
-        style_guide: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        prompt = self.prompt_manager.build_review_prompt(
-            chapter_num=chapter_num,
-            chapter_outline=chapter_outline,
-            core_setting=core_setting,
-            content=content,
-        )
-
-        response = self.ai_role_manager.chat_completion(
-            role=AIRole.REVIEWER, messages=[{"role": "user", "content": prompt}]
-        )
-
-        return self._parse_review_response(response)
-
-    def _parse_review_response(self, response: str) -> Dict[str, Any]:
-        try:
-            json_match = re.search(r"\{[\s\S]*\}", response)
-            if json_match:
-                import json
-
-                return json.loads(json_match.group())
-        except:
-            pass
-
-        return {
-            "total_score": 0,
-            "passed": False,
-            "main_issues": ["评审结果解析失败"],
-            "refine_suggestions": ["请重新评审"],
-            "raw_response": response,
-        }
-
-    def _refine_chapter(
-        self,
-        content: str,
-        chapter_num: int,
-        chapter_outline: Dict[str, Any],
-        review_result: Dict[str, Any],
-        style_guide: Dict[str, Any],
-    ) -> str:
-        main_issues = review_result.get("main_issues", [])
-        refine_suggestions = review_result.get("refine_suggestions", [])
-
-        prompt = self.prompt_manager.build_refine_prompt(
-            chapter_num=chapter_num,
-            chapter_outline=chapter_outline,
-            issues=main_issues,
-            suggestions=refine_suggestions,
-            content=content,
-        )
-
-        response = self.ai_role_manager.chat_completion(
-            role=AIRole.REFINER, messages=[{"role": "user", "content": prompt}]
-        )
-
-        return self._clean_response(response)
-
-    def _clean_response(self, response: str) -> str:
-        if not response:
+        Returns:
+            润色后的内容
+        """
+        if not content:
             return ""
 
-        response = response.strip()
+        # 1. 清理多余空行
+        content = re.sub(r"\n{3,}", "\n\n", content)
 
-        if response.startswith("```"):
-            lines = response.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            response = "\n".join(lines)
+        # 2. 标准化引号
+        content = content.replace('"', '"').replace('"', '"')
+        content = content.replace("'", "'").replace("'", "'")
 
-        return response.strip()
+        # 3. 清理行首尾空格
+        lines = [line.strip() for line in content.split("\n")]
+        content = "\n".join(lines)
 
-    def _extract_word_count(self, chapter_outline: Dict[str, Any]) -> int:
-        raw_value = chapter_outline.get(
-            "字数目标", self.settings.get_default_word_count()
-        )
-        if isinstance(raw_value, int):
-            return raw_value
-        if isinstance(raw_value, str):
-            matched = re.search(r"(\d+)", raw_value)
-            if matched:
-                return int(matched.group(1))
-        return self.settings.get_default_word_count()
+        # 4. 确保段落间有空行
+        paragraphs = content.split("\n\n")
+        paragraphs = [p.strip() for p in paragraphs if p.strip()]
+        content = "\n\n".join(paragraphs)
+
+        return content.strip()
+
+    def _generate_state_card(
+        self, chapter_num: int, content: str, previous_context: str
+    ) -> Dict[str, Any]:
+        """
+        生成状态卡
+
+        Args:
+            chapter_num: 章节编号
+            content: 章节内容
+            previous_context: 前文上下文
+
+        Returns:
+            状态卡字典
+        """
+        # 简化版：从内容中提取关键信息
+        state_card = {
+            "人物状态": self._extract_characters_from_content(content),
+            "当前位置": self._extract_locations_from_content(content),
+            "情感基调": self._extract_emotion_tone(content),
+            "未完成事件": [],
+            "下章建议": "",
+        }
+
+        # 检测未完成事件（以省略号、问号结尾的对话或描述）
+        lines = content.split("\n")
+        for line in lines:
+            stripped = line.strip()
+            if stripped.endswith("...") or stripped.endswith("……"):
+                state_card["未完成事件"].append(stripped[:100])  # 限制长度
+
+        return state_card
+
+    def _extract_characters_from_content(self, content: str) -> List[str]:
+        """从内容中提取出现的人物"""
+        # 简单实现：查找引号内的对话，推测说话人
+        # 实际项目中可以使用更复杂的NER
+        return []
+
+    def _extract_locations_from_content(self, content: str) -> List[str]:
+        """从内容中提取地点"""
+        # 简单实现
+        return []
+
+    def _extract_emotion_tone(self, content: str) -> str:
+        """提取情感基调"""
+        # 简单实现
+        return ""
 
     def _update_trackers(
         self,
@@ -364,6 +236,15 @@ class ChapterExpander:
         chapter_outline: Dict[str, Any],
         state_card: Dict[str, Any] = None,
     ):
+        """
+        更新追踪器
+
+        Args:
+            chapter_num: 章节编号
+            content: 章节内容
+            chapter_outline: 章节大纲
+            state_card: 状态卡
+        """
         self.character_tracker.update_from_chapter(chapter_num, content, state_card)
 
         removed = self.character_tracker.cleanup_characters(chapter_num, state_card)
@@ -379,6 +260,7 @@ class ChapterExpander:
         self._save_tracking_files()
 
     def _save_tracking_files(self):
+        """保存追踪文件"""
         try:
             tracking_dir = Path(self.settings.path_config.prompt_dir) / "tracking"
             tracking_dir.mkdir(parents=True, exist_ok=True)
@@ -395,42 +277,20 @@ class ChapterExpander:
         except Exception as e:
             self.logger.error(f"保存追踪文件失败: {e}")
 
-    def _generate_state_card(
-        self, chapter_num: int, content: str, previous_context: str
-    ) -> Dict[str, Any]:
-        prompt = self.prompt_manager.build_state_card_prompt(content, previous_context)
-
-        try:
-            response = self.ai_role_manager.chat_completion(
-                role=AIRole.REVIEWER,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是小说连续性分析助手，擅长提取章节结尾状态。",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
-
-            json_match = re.search(r"\{[\s\S]*\}", response)
-            if json_match:
-                import json
-
-                return json.loads(json_match.group())
-        except Exception as e:
-            self.logger.warning(f"生成状态卡失败: {e}")
-
-        return {
-            "人物状态": [],
-            "当前位置": [],
-            "情感基调": "",
-            "未完成事件": [],
-            "下章建议": "",
-        }
-
     def save_chapter(
         self, chapter_num: int, content: str, output_dir: str = None
     ) -> str:
+        """
+        保存章节到文件
+
+        Args:
+            chapter_num: 章节编号
+            content: 章节内容
+            output_dir: 输出目录
+
+        Returns:
+            保存的文件路径
+        """
         output_path = Path(output_dir or self.settings.path_config.draft_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -443,7 +303,16 @@ class ChapterExpander:
         return str(file_path)
 
     def load_existing_chapter(self, chapter_num: int, draft_dir: str = None) -> str:
-        """读取已存在的章节内容"""
+        """
+        读取已存在的章节内容
+
+        Args:
+            chapter_num: 章节编号
+            draft_dir: 草稿目录
+
+        Returns:
+            章节内容，如果不存在则返回空字符串
+        """
         output_path = Path(draft_dir or self.settings.path_config.draft_dir)
         file_path = output_path / f"第{chapter_num:04d}章.txt"
 
@@ -456,7 +325,15 @@ class ChapterExpander:
         return ""
 
     def get_existing_chapters(self, draft_dir: str = None) -> List[int]:
-        """获取已存在的章节列表"""
+        """
+        获取已存在的章节列表
+
+        Args:
+            draft_dir: 草稿目录
+
+        Returns:
+            已存在的章节编号列表
+        """
         output_path = Path(draft_dir or self.settings.path_config.draft_dir)
         existing = []
 
@@ -466,7 +343,7 @@ class ChapterExpander:
                     match = re.search(r"第(\d+)章", f.name)
                     if match:
                         existing.append(int(match.group(1)))
-                except:
+                except Exception:
                     continue
 
         return sorted(existing)
@@ -480,6 +357,20 @@ class ChapterExpander:
         style_guide: Dict[str, Any] = None,
         context_window: int = 10,
     ) -> List[Dict[str, Any]]:
+        """
+        批量扩写多个章节
+
+        Args:
+            outline: 完整大纲
+            start_chapter: 起始章节
+            end_chapter: 结束章节
+            core_setting: 核心设定
+            style_guide: 风格指南
+            context_window: 上下文窗口大小
+
+        Returns:
+            扩写结果列表
+        """
         results = []
         context_parts = []
 
@@ -493,18 +384,18 @@ class ChapterExpander:
                 self.logger.warning(f"未找到第{chapter_num}章的大纲，跳过")
                 continue
 
-            previous_full_count = min(len(context_parts), self.context_before_full)
-            previous_context = (
-                "\n\n".join(context_parts[-previous_full_count:])
-                if context_parts
-                else ""
-            )
+            # 构建前文上下文
+            previous_context = ""
+            if context_parts:
+                take_count = min(len(context_parts), context_window)
+                previous_context = "\n\n".join(context_parts[-take_count:])
 
+            # 构建后文上下文（仅对最后一个章节）
             after_context = ""
             if chapter_num == end_chapter:
                 after_chapters = [ch for ch in existing_chapters if ch > end_chapter]
                 if after_chapters:
-                    take_count = min(len(after_chapters), self.context_after_full)
+                    take_count = min(len(after_chapters), 3)  # 最多取3章
                     after_chapters_to_read = after_chapters[:take_count]
 
                     after_parts = []
@@ -515,9 +406,6 @@ class ChapterExpander:
 
                     if after_parts:
                         after_context = "\n\n".join(after_parts)
-                        self.logger.info(
-                            f"第{chapter_num}章检测到后文，纳入第{after_chapters_to_read[0]}-{after_chapters_to_read[-1]}章作为上下文"
-                        )
 
             try:
                 content, state_card = self.expand_chapter(

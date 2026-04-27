@@ -9,7 +9,6 @@ SoundNovel - AI辅助小说创作工具
     python soundnovel.py cli init              # 初始化项目
     python soundnovel.py cli outline           # 生成章节大纲
     python soundnovel.py cli expand --chapter 1    # 扩写章节
-    python soundnovel.py cli agent             # 启动 Agent 对话模式
 
     # 查看帮助
     python soundnovel.py --help
@@ -58,7 +57,6 @@ def create_parser() -> argparse.ArgumentParser:
   %(prog)s cli init                    # 初始化项目
   %(prog)s cli outline                 # 生成章节大纲
   %(prog)s cli expand --chapter 1      # 扩写第1章
-  %(prog)s cli agent                   # 启动 Agent 对话模式
   %(prog)s cli --help                  # 查看 CLI 帮助
 
 更多信息:
@@ -90,7 +88,6 @@ CLI 命令:
   init          初始化小说项目
   outline       生成章节大纲
   expand        扩写章节内容
-  agent         Agent 对话模式
 
 使用 %(prog)s cli --help 查看所有命令
         """
