@@ -183,6 +183,17 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help='正文上下文窗口大小（默认: 10）'
     )
+    expand_parser.add_argument(
+        '--batch-size', '-b',
+        type=int,
+        default=None,
+        help='批量生成时每批章节数（默认: 从配置读取，初始值 10）'
+    )
+    expand_parser.add_argument(
+        '--single',
+        action='store_true',
+        help='强制使用单章模式（禁用批量优化，用于调试）'
+    )
     expand_parser.set_defaults(func=commands.expand)
 
     # status 命令

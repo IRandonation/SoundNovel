@@ -175,7 +175,7 @@ class DeepSeekClient(BaseModelClient):
     def chat_completion(
         self, model: str, messages: List[Dict[str, str]], **kwargs
     ) -> str:
-        """聊天补全"""
+        """聊天补全，支持缓存统计"""
         try:
             self._apply_rate_limit()
 
@@ -190,11 +190,40 @@ class DeepSeekClient(BaseModelClient):
                 stream=False,
             )
 
+            # 记录缓存统计
+            self._log_cache_stats(completion)
+
             self.logger.info("DeepSeek API请求成功")
             return completion.choices[0].message.content
 
         except Exception as e:
             raise Exception(f"DeepSeek聊天补全失败: {e}")
+
+    def _log_cache_stats(self, completion):
+        """记录DeepSeek缓存统计"""
+        try:
+            usage = completion.usage
+            if usage and hasattr(usage, 'prompt_cache_hit_tokens') and hasattr(usage, 'prompt_cache_miss_tokens'):
+                hit_tokens = usage.prompt_cache_hit_tokens
+                miss_tokens = usage.prompt_cache_miss_tokens
+                total_input = usage.prompt_tokens
+                total_output = usage.completion_tokens
+
+                cache_rate = 0.0
+                if total_input > 0:
+                    cache_rate = hit_tokens / total_input * 100
+
+                self.logger.info(
+                    f"DeepSeek缓存统计: "
+                    f"输入Token={total_input}, "
+                    f"缓存命中={hit_tokens}, "
+                    f"缓存未命中={miss_tokens}, "
+                    f"命中率={cache_rate:.1f}%, "
+                    f"输出Token={total_output}"
+                )
+        except Exception as e:
+            # 缓存统计失败不影响主流程
+            self.logger.debug(f"缓存统计记录失败: {e}")
 
     def test_connection(self) -> bool:
         """测试连接"""
