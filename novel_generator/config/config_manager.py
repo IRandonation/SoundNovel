@@ -40,7 +40,6 @@ class ConfigManager:
             "generation": generation_data.get("generation", {}),
             "roles": generation_data.get("roles", {}),
             "providers": generation_data.get("providers", {}),
-            "quality_check": generation_data.get("quality_check", {}),
             "session": session_state.to_dict(),
         }
 
@@ -63,9 +62,6 @@ class ConfigManager:
         payload["generation"] = unified.get("generation", payload.get("generation", {}))
         payload["roles"] = unified.get("roles", payload.get("roles", {}))
         payload["providers"] = unified.get("providers", payload.get("providers", {}))
-        payload["quality_check"] = unified.get(
-            "quality_check", payload.get("quality_check", {})
-        )
 
         return self.generation_manager.save(payload)
 

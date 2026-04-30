@@ -15,19 +15,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG = {
     "version": "1.0",
     "generation": {
-        "max_refine_iterations": 3,
-        "pass_score_threshold": 70,
         "context_chapters": 10,
-        "context_before_full": 10,
-        "context_after_full": 5,
         "default_word_count": 1500,
         "outline_window": 30,
         "draft_window": 10,
         "skeleton_batch_size": 10,
         "skeleton_context_window": 15,
-        "json_output_max_tokens": 32000,
-        "json_output_tokens_per_chapter": 800,
-        "json_output_min_tokens": 8000,
     },
     "roles": {
         "generator": {
@@ -53,19 +46,6 @@ DEFAULT_CONFIG = {
             "api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
             "default_models": ["doubao-seed-2-0-lite-260215"],
         },
-    },
-    "quality_check": {
-        "banned_words": [
-            "复杂的思绪",
-            "难以言喻",
-            "命运的齿轮",
-            "心中五味杂陈",
-            "一种莫名的",
-            "仿佛",
-            "似乎",
-            "这一刻",
-        ],
-        "ai_patterns": ["一种莫名的", "仿佛", "似乎", "这一刻", "不由得", "不禁"],
     },
 }
 
@@ -140,9 +120,6 @@ class GenerationConfigManager:
         if "providers" in config:
             merged["providers"].update(config["providers"])
 
-        if "quality_check" in config:
-            merged["quality_check"].update(config["quality_check"])
-
         return merged
 
     def get_generation_config(self) -> Dict[str, Any]:
@@ -185,20 +162,6 @@ class GenerationConfigManager:
     def get_provider_models(self, provider_name: str) -> list:
         provider = self.get_provider_config(provider_name)
         return provider.get("default_models", [])
-
-    def get_banned_words(self) -> list:
-        quality = self.config.get("quality_check", DEFAULT_CONFIG["quality_check"])
-        return quality.get("banned_words", [])
-
-    def get_ai_patterns(self) -> list:
-        quality = self.config.get("quality_check", DEFAULT_CONFIG["quality_check"])
-        return quality.get("ai_patterns", [])
-
-    def set_banned_words(self, words: list) -> bool:
-        if "quality_check" not in self._config:
-            self._config["quality_check"] = {}
-        self._config["quality_check"]["banned_words"] = words
-        return self.save()
 
     def reset_to_default(self) -> bool:
         return self.save(copy.deepcopy(DEFAULT_CONFIG))

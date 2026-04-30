@@ -550,15 +550,11 @@ class ChapterSkeletonGenerator:
             if json_output:
                 kwargs["response_format"] = {"type": "json_object"}
                 self.logger.info("启用JSON输出模式")
-                # 从配置读取JSON输出token设置
-                gen_config = self.config.get("generation", {})
-                max_tokens = gen_config.get("json_output_max_tokens", 32000)
-                tokens_per_chapter = gen_config.get("json_output_tokens_per_chapter", 800)
-                min_tokens = gen_config.get("json_output_min_tokens", 8000)
-                # 根据章节数动态计算
-                estimated_tokens = min(max_tokens, max(min_tokens, chapter_count * tokens_per_chapter))
+                # JSON输出模式需要更多token，根据章节数动态计算
+                # 每章大约需要 500-800 token 的JSON输出
+                estimated_tokens = min(32000, max(8000, chapter_count * 800))
                 kwargs["max_tokens"] = estimated_tokens
-                self.logger.info(f"设置最大token数: {estimated_tokens} (章节数: {chapter_count}, 每章约: {tokens_per_chapter})")
+                self.logger.info(f"设置最大token数: {estimated_tokens} (章节数: {chapter_count})")
 
             response = self.ai_role_manager.chat_completion(
                 role=AIRole.GENERATOR,
