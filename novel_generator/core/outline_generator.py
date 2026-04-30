@@ -324,9 +324,10 @@ class ChapterSkeletonGenerator:
 
         # 重试循环：解析失败时最多重试2次
         max_retries = 2
+        chapter_count = end_ch - start_ch + 1
         for attempt in range(max_retries + 1):
             # 启用JSON输出模式（DeepSeek原生支持）
-            response = self._call_ai_api(prompt, json_output=True)
+            response = self._call_ai_api(prompt, json_output=True, chapter_count=chapter_count)
             skeletons = self._parse_batch_skeleton_response(response, chapter_range)
 
             if skeletons:
@@ -534,7 +535,7 @@ class ChapterSkeletonGenerator:
 
         return "\n".join(lines) if lines else "（参见幕规划章节划分）"
 
-    def _call_ai_api(self, prompt: str, json_output: bool = False) -> str:
+    def _call_ai_api(self, prompt: str, json_output: bool = False, chapter_count: int = 1) -> str:
         """调用AI API，支持JSON输出模式"""
         try:
             messages = [
@@ -549,6 +550,11 @@ class ChapterSkeletonGenerator:
             if json_output:
                 kwargs["response_format"] = {"type": "json_object"}
                 self.logger.info("启用JSON输出模式")
+                # JSON输出模式需要更多token，根据章节数动态计算
+                # 每章大约需要 500-800 token 的JSON输出
+                estimated_tokens = min(32000, max(8000, chapter_count * 800))
+                kwargs["max_tokens"] = estimated_tokens
+                self.logger.info(f"设置最大token数: {estimated_tokens} (章节数: {chapter_count})")
 
             response = self.ai_role_manager.chat_completion(
                 role=AIRole.GENERATOR,
