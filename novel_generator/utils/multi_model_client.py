@@ -175,20 +175,29 @@ class DeepSeekClient(BaseModelClient):
     def chat_completion(
         self, model: str, messages: List[Dict[str, str]], **kwargs
     ) -> str:
-        """聊天补全，支持缓存统计"""
+        """聊天补全，支持缓存统计和JSON输出"""
         try:
             self._apply_rate_limit()
 
             self.logger.info(f"发送DeepSeek API请求，模型: {model}")
 
-            completion = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=kwargs.get("max_tokens", self.max_tokens),
-                temperature=kwargs.get("temperature", self.temperature),
-                top_p=kwargs.get("top_p", self.top_p),
-                stream=False,
-            )
+            # 构建请求参数
+            request_kwargs = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+                "temperature": kwargs.get("temperature", self.temperature),
+                "top_p": kwargs.get("top_p", self.top_p),
+                "stream": False,
+            }
+
+            # 支持JSON输出模式
+            response_format = kwargs.get("response_format")
+            if response_format:
+                request_kwargs["response_format"] = response_format
+                self.logger.info("启用JSON输出模式")
+
+            completion = self.client.chat.completions.create(**request_kwargs)
 
             # 记录缓存统计
             self._log_cache_stats(completion)

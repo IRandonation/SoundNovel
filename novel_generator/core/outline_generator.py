@@ -325,7 +325,8 @@ class ChapterSkeletonGenerator:
         # 重试循环：解析失败时最多重试2次
         max_retries = 2
         for attempt in range(max_retries + 1):
-            response = self._call_ai_api(prompt)
+            # 启用JSON输出模式（DeepSeek原生支持）
+            response = self._call_ai_api(prompt, json_output=True)
             skeletons = self._parse_batch_skeleton_response(response, chapter_range)
 
             if skeletons:
@@ -415,7 +416,7 @@ class ChapterSkeletonGenerator:
         phase_map = self._parse_chapter_phases(act_data.get("章节划分", []), chapter_range)
         batch_phases = self._format_batch_phases(chapter_range, phase_map)
 
-        return template_str.format(
+        prompt = template_str.format(
             chapter_range=f"{start_ch}-{end_ch}",
             batch_count=batch_count,
             core_setting=core_setting_text,
@@ -424,6 +425,46 @@ class ChapterSkeletonGenerator:
             previous_skeletons=previous_skeletons,
             batch_phases=batch_phases,
         )
+
+        # 添加JSON格式示例（确保prompt包含"json"字样，满足DeepSeek JSON Output要求）
+        json_example = """
+
+【重要】输出必须是合法的JSON格式，示例如下：
+
+```json
+{
+  "第118章": {
+    "标题": "章节标题",
+    "章节定位": "幕内定位/功能",
+    "核心事件": "本章主要事件描述",
+    "与前章因果": "承接上文并引出本章",
+    "人物行动": {
+      "主角": "主角的关键行动",
+      "关键配角": "配角的配合行动"
+    },
+    "场景概览": ["场景1描述", "场景2描述"],
+    "情绪曲线": "情绪变化描述",
+    "伏笔处理": {
+      "埋设": ["新埋设的伏笔1"],
+      "回收": ["回收的伏笔1"]
+    },
+    "结尾卡点": "本章结尾的悬念或钩子",
+    "字数目标": 2500
+  },
+  "第119章": {
+    ...
+  }
+}
+```
+
+注意：
+1. 所有字段必须完整，不要遗漏
+2. 字符串值中不要包含未转义的双引号
+3. 确保JSON语法正确（逗号、括号配对等）
+4. 输出必须是纯JSON，不要有其他文字说明
+"""
+
+        return prompt + json_example
 
     def _build_overall_story_text(self) -> str:
         """构建整体故事框架文本"""
@@ -493,18 +534,26 @@ class ChapterSkeletonGenerator:
 
         return "\n".join(lines) if lines else "（参见幕规划章节划分）"
 
-    def _call_ai_api(self, prompt: str) -> str:
-        """调用AI API"""
+    def _call_ai_api(self, prompt: str, json_output: bool = False) -> str:
+        """调用AI API，支持JSON输出模式"""
         try:
+            messages = [
+                {
+                    "role": "system",
+                    "content": "你是一个专业的小说章节规划师，擅长设计章节骨架结构，确保章节间的因果链、情绪节奏和伏笔衔接到位。输出必须严格遵循用户指定的JSON格式。",
+                },
+                {"role": "user", "content": prompt},
+            ]
+
+            kwargs = {}
+            if json_output:
+                kwargs["response_format"] = {"type": "json_object"}
+                self.logger.info("启用JSON输出模式")
+
             response = self.ai_role_manager.chat_completion(
                 role=AIRole.GENERATOR,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是一个专业的小说章节规划师，擅长设计章节骨架结构，确保章节间的因果链、情绪节奏和伏笔衔接到位。输出必须严格遵循用户指定的JSON格式。",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                messages=messages,
+                **kwargs,
             )
             return response or ""
         except Exception as e:
