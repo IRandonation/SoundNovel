@@ -70,27 +70,6 @@ class ConfigManager:
         if session_payload:
             self.session_manager._state = SessionState.from_dict(session_payload)
 
-        generation_cfg = unified.get("generation", {})
-        if generation_cfg:
-            self.session_manager.state.generation_config.context_chapters = (
-                generation_cfg.get(
-                    "context_chapters",
-                    self.session_manager.state.generation_config.context_chapters,
-                )
-            )
-            self.session_manager.state.generation_config.default_word_count = (
-                generation_cfg.get(
-                    "default_word_count",
-                    self.session_manager.state.generation_config.default_word_count,
-                )
-            )
-
-        roles = unified.get("roles", {})
-        if roles:
-            self.session_manager.state.ai_roles = self.session_manager.state.ai_roles.from_dict(
-                roles
-            )
-
         return self.session_manager.save()
 
     def get_role_config(self, role_name: str) -> Dict[str, Any]:
