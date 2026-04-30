@@ -97,6 +97,10 @@ class GenerationConfig:
     outline_window: int = 30
     draft_window: int = 10
     batch_size: int = 10  # 批量生成默认批次大小
+    # JSON输出配置
+    json_output_max_tokens: int = 32000
+    json_output_tokens_per_chapter: int = 800
+    json_output_min_tokens: int = 8000
 
 
 class Settings:
@@ -207,6 +211,13 @@ class Settings:
                 self.generation_config.draft_window = gen_config["draft_window"]
             if "batch_size" in gen_config:
                 self.generation_config.batch_size = gen_config["batch_size"]
+            # JSON输出配置
+            if "json_output_max_tokens" in gen_config:
+                self.generation_config.json_output_max_tokens = gen_config["json_output_max_tokens"]
+            if "json_output_tokens_per_chapter" in gen_config:
+                self.generation_config.json_output_tokens_per_chapter = gen_config["json_output_tokens_per_chapter"]
+            if "json_output_min_tokens" in gen_config:
+                self.generation_config.json_output_min_tokens = gen_config["json_output_min_tokens"]
 
         if "ai_roles" in config_dict:
             self.ai_roles_config = AIRolesConfig.from_dict(config_dict["ai_roles"])
@@ -284,6 +295,9 @@ class Settings:
                 "outline_window": self.generation_config.outline_window,
                 "draft_window": self.generation_config.draft_window,
                 "batch_size": self.generation_config.batch_size,
+                "json_output_max_tokens": self.generation_config.json_output_max_tokens,
+                "json_output_tokens_per_chapter": self.generation_config.json_output_tokens_per_chapter,
+                "json_output_min_tokens": self.generation_config.json_output_min_tokens,
             },
             "ai_roles": self.ai_roles_config.to_dict(),
         }

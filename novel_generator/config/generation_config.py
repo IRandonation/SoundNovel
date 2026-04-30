@@ -25,6 +25,9 @@ DEFAULT_CONFIG = {
         "draft_window": 10,
         "skeleton_batch_size": 10,
         "skeleton_context_window": 15,
+        "json_output_max_tokens": 32000,
+        "json_output_tokens_per_chapter": 800,
+        "json_output_min_tokens": 8000,
     },
     "roles": {
         "generator": {
