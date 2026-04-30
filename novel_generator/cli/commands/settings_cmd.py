@@ -1,6 +1,6 @@
 """
 settings 命令
-用于配置AI角色和模型设置
+用于配置生成模型和参数设置
 """
 
 import argparse
@@ -28,16 +28,14 @@ DEFAULT_MODELS = {
 
 ROLES = {
     "generator": "生成者 (负责大纲生成、章节扩写)",
-    "reviewer": "评审者 (负责质量检查、一致性检查)",
-    "refiner": "润色者 (负责内容润色、修复问题)",
 }
 
 GEN_PARAMS = {
-    "max_refine_iterations": "最大润色迭代次数",
-    "pass_score_threshold": "通过分数阈值",
-    "context_chapters": "上下文章节数",
     "default_word_count": "默认字数目标",
-    "batch_size": "批量处理大小",
+    "outline_window": "大纲上下文窗口 (向前看过往大纲章数)",
+    "draft_window": "正文上下文窗口 (向前看过往已生成正文章数)",
+    "skeleton_batch_size": "骨架批次大小 (单次API调用生成的章数)",
+    "skeleton_context_window": "骨架上下文窗口 (向前看过往骨架章数)",
 }
 
 
@@ -54,7 +52,7 @@ def show_current_settings(
         print(f"  {desc}: {value}")
 
     print("\n" + "=" * 60)
-    print("AI角色配置 (实际使用)")
+    print("生成模型配置")
     print("=" * 60)
 
     ai_roles = session_mgr.state.ai_roles
@@ -82,10 +80,6 @@ def show_current_settings(
     print("=" * 60)
 
     api_config = session_mgr.state.api_config
-    provider = api_config.provider
-    provider_name = PROVIDERS.get(provider, provider)
-
-    print(f"\n当前服务商: {provider_name}")
 
     all_keys_status = []
     if api_config.doubao_api_key:
@@ -124,7 +118,7 @@ def interactive_setup(
     while True:
         print("\n请选择配置项:")
         print("  1. 配置生成流程参数")
-        print("  2. 配置AI角色")
+        print("  2. 配置生成模型")
         print("  3. 配置API密钥")
         print("  4. 查看当前配置")
         print("  5. 重置为默认配置")
@@ -312,23 +306,8 @@ def _config_ai_role(
     if session_mgr is None:
         return
 
-    print("\n可用角色:")
-    for i, (role_name, role_desc) in enumerate(ROLES.items(), 1):
-        print(f"  {i}. {role_desc}")
-
-    role_names = list(ROLES.keys())
-    choice = input("\n请选择角色 (1-3): ").strip()
-
-    try:
-        role_idx = int(choice) - 1
-        if role_idx < 0 or role_idx >= len(role_names):
-            print("无效选择")
-            return
-        role_name = role_names[role_idx]
-    except ValueError:
-        print("无效输入")
-        return
-
+    # 直接配置 generator 角色（唯一角色）
+    role_name = "generator"
     print(f"\n配置角色: {ROLES[role_name]}")
 
     role_config = gen_config_mgr.get_role_config(role_name)
@@ -338,11 +317,11 @@ def _config_ai_role(
         name = PROVIDERS.get(code, code)
         if code == "doubao":
             model = session_mgr.state.api_config.doubao_models.get(
-                "default_model", DEFAULT_MODELS.get(code, "")
+                "expansion_model", DEFAULT_MODELS.get(code, "")
             )
         elif code == "deepseek":
             model = session_mgr.state.api_config.deepseek_models.get(
-                "default_model", DEFAULT_MODELS.get(code, "")
+                "expansion_model", DEFAULT_MODELS.get(code, "")
             )
         else:
             model = DEFAULT_MODELS.get(code, "")
@@ -361,11 +340,11 @@ def _config_ai_role(
 
     if provider == "doubao":
         default_model = session_mgr.state.api_config.doubao_models.get(
-            "default_model", DEFAULT_MODELS.get(provider, "")
+            "expansion_model", DEFAULT_MODELS.get(provider, "")
         )
     elif provider == "deepseek":
         default_model = session_mgr.state.api_config.deepseek_models.get(
-            "default_model", DEFAULT_MODELS.get(provider, "")
+            "expansion_model", DEFAULT_MODELS.get(provider, "")
         )
     else:
         default_model = DEFAULT_MODELS.get(provider, "")
@@ -460,20 +439,20 @@ def set_role_config(gen_config_mgr: GenerationConfigManager, args):
 def set_generation_config(gen_config_mgr: GenerationConfigManager, args):
     update_params = {}
 
-    if args.max_iterations is not None:
-        update_params["max_refine_iterations"] = args.max_iterations
-
-    if args.pass_score is not None:
-        update_params["pass_score_threshold"] = args.pass_score
-
-    if args.context_chapters is not None:
-        update_params["context_chapters"] = args.context_chapters
-
     if args.default_words is not None:
         update_params["default_word_count"] = args.default_words
 
-    if args.batch_size is not None:
-        update_params["batch_size"] = args.batch_size
+    if args.outline_window is not None:
+        update_params["outline_window"] = args.outline_window
+
+    if args.draft_window is not None:
+        update_params["draft_window"] = args.draft_window
+
+    if args.skeleton_batch_size is not None:
+        update_params["skeleton_batch_size"] = args.skeleton_batch_size
+
+    if args.skeleton_context_window is not None:
+        update_params["skeleton_context_window"] = args.skeleton_context_window
 
     if not update_params:
         print("错误: 请指定至少一个配置项")
@@ -528,7 +507,10 @@ def run(args):
     if args.role:
         return set_role_config(gen_config_mgr, args)
 
-    if hasattr(args, "max_iterations") and args.max_iterations is not None:
+    if any(
+        getattr(args, attr, None) is not None
+        for attr in ["max_iterations", "pass_score", "context_chapters", "default_words", "outline_window", "draft_window", "skeleton_batch_size", "skeleton_context_window"]
+    ):
         return set_generation_config(gen_config_mgr, args)
 
     show_current_settings(gen_config_mgr, session_mgr)
@@ -542,8 +524,8 @@ def run(args):
 def add_parser(subparsers):
     parser = subparsers.add_parser(
         "settings",
-        help="配置AI角色和生成参数",
-        description="配置AI角色、模型参数和生成流程设置",
+        help="配置生成模型和生成参数",
+        description="配置生成模型、模型参数和生成流程设置",
     )
 
     parser.add_argument("--show", "-s", action="store_true", help="显示当前配置")
@@ -571,7 +553,7 @@ def add_parser(subparsers):
         "-r",
         type=str,
         choices=list(ROLES.keys()),
-        help="指定要配置的角色 (generator/reviewer/refiner)",
+        help="指定要配置的角色 (generator)",
     )
 
     parser.add_argument(
@@ -593,23 +575,25 @@ def add_parser(subparsers):
     parser.add_argument("--disable", action="store_true", help="禁用指定角色")
 
     parser.add_argument(
-        "--max-iterations", type=int, dest="max_iterations", help="设置最大润色迭代次数"
-    )
-
-    parser.add_argument(
-        "--pass-score", type=int, dest="pass_score", help="设置评审通过分数阈值 (0-100)"
-    )
-
-    parser.add_argument(
-        "--context-chapters", type=int, dest="context_chapters", help="设置上下文章节数"
-    )
-
-    parser.add_argument(
         "--default-words", type=int, dest="default_words", help="设置默认字数目标"
     )
 
     parser.add_argument(
-        "--batch-size", type=int, dest="batch_size", help="设置批量处理大小"
+        "--outline-window", type=int, dest="outline_window", help="设置大纲上下文窗口大小（默认30）"
+    )
+
+    parser.add_argument(
+        "--draft-window", type=int, dest="draft_window", help="设置正文上下文窗口大小（默认10）"
+    )
+
+    parser.add_argument(
+        "--skeleton-batch-size", type=int, dest="skeleton_batch_size",
+        help="设置骨架批次大小：单次API调用生成的章数（默认10）"
+    )
+
+    parser.add_argument(
+        "--skeleton-context-window", type=int, dest="skeleton_context_window",
+        help="设置骨架上下文窗口：向前看过往骨架的章数（默认15）"
     )
 
     parser.set_defaults(func=run)

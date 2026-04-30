@@ -1,7 +1,8 @@
 """
 章节扩写命令
 
-将章节大纲扩写为完整的小说正文
+将章节大纲扩写为完整的小说正文。
+使用大纲窗口 + 正文窗口上下文注入，章节级一次生成。
 """
 
 import argparse
@@ -12,7 +13,11 @@ from typing import Optional, Tuple
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from novel_generator.core.chapter_expander import ChapterExpander
+from novel_generator.core.chapter_expander import (
+    ChapterExpander,
+    _build_outline_context,
+    _build_draft_context,
+)
 from novel_generator.config.settings import Settings
 from novel_generator.config.config_manager import ConfigManager
 from novel_generator.utils.multi_model_client import MultiModelClient
@@ -34,12 +39,13 @@ from novel_generator.cli.utils import (
     print_warning,
     setup_cli_logging,
 )
+from novel_generator.core.ai_roles import AIRole
 
 
 def run(args: argparse.Namespace) -> int:
     logger = setup_cli_logging()
 
-    print_info("🚀 开始章节扩写...")
+    print_info("开始章节扩写...")
 
     try:
         config_manager = ConfigManager(str(Path.cwd()))
@@ -72,16 +78,15 @@ def run(args: argparse.Namespace) -> int:
         settings = Settings(config)
         settings.validate()
 
-        style_guide = load_style_guide()
-        if style_guide:
-            print_info("风格指导加载完成")
-
         outline_file_from_session = config_manager.state.generation_state.outline_file
 
         if args.outline_file:
             outline_file = Path(args.outline_file)
         elif outline_file_from_session:
             outline_file = Path(outline_file_from_session)
+            if not outline_file.exists():
+                print_warning(f"会话中记录的大纲文件不存在: {outline_file}")
+                outline_file = get_latest_outline_file()
         else:
             outline_file = get_latest_outline_file()
 
@@ -152,40 +157,30 @@ def run(args: argparse.Namespace) -> int:
         )
 
         client = MultiModelClient(config)
-        print_info(f"当前使用模型: {client.get_current_model()}")
 
-        expander = ChapterExpander(config, client)
+        from novel_generator.utils.common import load_core_setting
+        core_setting = load_core_setting()
 
-        draft_dir = config.get("paths", {}).get("draft_dir", "03_draft/")
+        expander = ChapterExpander(config, client, core_setting=core_setting)
+
+        # 显示当前使用的角色配置
+        role_config = expander.ai_role_manager.get_role_config(AIRole.GENERATOR)
+        if role_config.provider:
+            print_info(f"当前使用模型: {role_config.provider}/{role_config.model}")
+        else:
+            print_error("AI 角色未配置 provider，请先运行 'soundnovel settings --interactive'")
+            return 1
+
+        gen_config = config_manager.get_generation_config()
+        outline_window = args.outline_window or gen_config.get("outline_window", 30)
+        draft_window = args.draft_window or gen_config.get("draft_window", 10)
+
+        draft_dir = config.get("paths", {}).get("draft_dir", "user/output/draft/")
         if not Path(draft_dir).is_absolute():
             draft_dir = str(Path.cwd() / draft_dir)
         Path(draft_dir).mkdir(parents=True, exist_ok=True)
 
-        gen_config = config_manager.get_generation_config()
-        context_before_full = gen_config.get("context_before_full", 10)
-        context_after_full = gen_config.get("context_after_full", 5)
-
-        def get_existing_chapters(draft_path: str) -> list:
-            existing = []
-            draft_path_obj = Path(draft_path)
-            if draft_path_obj.exists():
-                import re
-
-                for f in draft_path_obj.glob("第*章.txt"):
-                    match = re.search(r"第(\d+)章", f.name)
-                    if match:
-                        existing.append(int(match.group(1)))
-            return sorted(existing)
-
-        def load_chapter_content(ch_num: int, draft_path: str) -> str:
-            file_path = Path(draft_path) / f"第{ch_num:04d}章.txt"
-            if file_path.exists():
-                with open(file_path, "r", encoding="utf-8") as f:
-                    return f.read()
-            return ""
-
-        existing_chapters = get_existing_chapters(draft_dir)
-        context_parts = []
+        session_mgr = config_manager.session_manager
 
         success_count = 0
         fail_count = 0
@@ -203,53 +198,26 @@ def run(args: argparse.Namespace) -> int:
                     fail_count += 1
                     continue
 
-                previous_full_count = min(len(context_parts), context_before_full)
-                previous_context = (
-                    "\n\n".join(context_parts[-previous_full_count:])
-                    if context_parts
-                    else ""
-                )
+                outline_ctx = _build_outline_context(outline_data, ch_num, outline_window)
+                draft_ctx = _build_draft_context(draft_dir, ch_num, draft_window)
 
-                after_context = ""
-                if ch_num == end_chapter:
-                    after_chapters = [
-                        ch for ch in existing_chapters if ch > end_chapter
-                    ]
-                    if after_chapters:
-                        take_count = min(len(after_chapters), context_after_full)
-                        after_chapters_to_read = after_chapters[:take_count]
-
-                        after_parts = []
-                        for ch in after_chapters_to_read:
-                            content = load_chapter_content(ch, draft_dir)
-                            if content:
-                                after_parts.append(f"【第{ch}章】\n{content}")
-
-                        if after_parts:
-                            after_context = "\n\n".join(after_parts)
-                            print_info(
-                                f"检测到后文，纳入第{after_chapters_to_read[0]}-{after_chapters_to_read[-1]}章作为上下文"
-                            )
-
-                result = expander.expand_chapter(
+                content = expander.expand_chapter(
                     chapter_num=ch_num,
                     chapter_outline=ch_data,
-                    previous_context=previous_context,
-                    after_context=after_context,
-                    style_guide=style_guide,
+                    outline_context=outline_ctx,
+                    draft_context=draft_ctx,
                 )
-
-                content = result[0] if isinstance(result, tuple) else result
 
                 expander.save_chapter(ch_num, content, draft_dir)
 
-                context_parts.append(f"【第{ch_num}章】\n{content}")
+                # 标记章节为 clean
+                session_mgr.set_chapter_state(ch_num, "clean")
 
                 config_manager.update_progress(
                     "draft", actual_start, ch_num, str(outline_file)
                 )
 
-                print_success(f"第 {ch_num} 章扩写完成")
+                print_success(f"第 {ch_num} 章扩写完成 ({len(content)}字)")
                 success_count += 1
 
             except Exception as e:
@@ -257,11 +225,15 @@ def run(args: argparse.Namespace) -> int:
                 fail_count += 1
                 continue
 
+        # 获取实际使用的 role_config
+        role_config = expander.ai_role_manager.get_role_config(AIRole.GENERATOR)
+        model_info = f"{role_config.provider}/{role_config.model}" if role_config.model else role_config.provider
+
         config_manager.add_session_record(
             action="expand",
             start_chapter=chapters_to_expand[0],
             end_chapter=chapters_to_expand[-1],
-            model_used=client.get_current_model(),
+            model_used=model_info,
             success=(fail_count == 0),
         )
 
@@ -271,6 +243,7 @@ def run(args: argparse.Namespace) -> int:
         print_info(f"成功: {success_count} 章")
         if fail_count > 0:
             print_warning(f"失败: {fail_count} 章")
+        print_info(f"大纲窗口: {outline_window} | 正文窗口: {draft_window}")
         print_info(f"草稿位置: {draft_dir}")
         print_info("=" * 50)
 

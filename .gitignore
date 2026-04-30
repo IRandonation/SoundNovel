@@ -129,25 +129,25 @@ dmypy.json
 Thumbs.db
 
 # 配置与敏感内容
-01_source/core_setting.yaml
-01_source/overall_outline.yaml
-05_script/*.json
+user/source/core_setting.yaml
+user/source/overall_outline.yaml
+user/config/*.json
 
 # 示例文件保留（不要屏蔽示例）
-!01_source/core_setting.example.yaml
-!01_source/overall_outline.example.yaml
-!source/examples/**
+!user/source/core_setting.example.yaml
+!user/source/overall_outline.example.yaml
+!user/source/examples/**
 
 # 生成内容（不进入公开仓库）
-02_outline/
-03_draft/
-04_prompt/tracking
-06_log/
+user/output/outline/
+user/output/draft/
+user/prompts/tracking
+user/logs/
 
 
 # 更精确的忽略规则（保留通配兼容）
-03_draft/*.txt
-02_outline/**/*.yaml
+user/output/draft/*.txt
+user/output/outline/**/*.yaml
 
 # Token/API 使用统计导出
 tokscale-export-*.json

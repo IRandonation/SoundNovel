@@ -78,15 +78,15 @@
 
 ```
 SoundNovel/
-├── 01_source/                    # 【用户提供】核心素材与设定
+├── user/source/                    # 【用户提供】核心素材与设定
 │   ├── core_setting.yaml         # 世界观、人物、伏笔
 │   └── overall_outline.yaml      # 幕结构、核心剧情脉络
-├── 02_outline/                   # 【生成】章节大纲
+├── user/output/outline/                   # 【生成】章节大纲
 │   ├── act_plan.yaml            # 幕级规划（含爽点布局）
 │   ├── chapter_skeletons.yaml   # 章级骨架
 │   └── chapter_*.yaml           # 场景级剧本
-├── 03_draft/                     # 【生成】章节正文
-├── 04_prompt/                    # 提示词模板
+├── user/output/draft/                     # 【生成】章节正文
+├── user/prompts/                    # 提示词模板
 │   ├── prompts/
 │   │   ├── outline_generation.yaml      # 三阶段生成Prompt
 │   │   ├── scene_expansion.yaml         # 场景扩写Prompt
@@ -95,10 +95,10 @@ SoundNovel/
 │   │       ├── power_up.yaml
 │   │       └── revelation.yaml
 │   └── tracking/                 # 追踪文件
-├── 05_script/                    # 配置文件
+├── user/config/                    # 配置文件
 │   ├── generation_config.json   # 生成配置
 │   └── session.json             # 会话状态（含API密钥）
-├── 06_log/                       # 【生成】日志目录
+├── user/logs/                       # 【生成】日志目录
 ├── novel_generator/              # 核心代码包
 │   ├── cli/                      # CLI命令模块
 │   ├── config/                   # 配置管理
@@ -177,7 +177,7 @@ python soundnovel.py cli init
 
 #### 2. 填写小说设定
 
-编辑 `01_source/core_setting.yaml`：
+编辑 `user/source/core_setting.yaml`：
 
 ```yaml
 世界观:
@@ -200,7 +200,7 @@ python soundnovel.py cli init
   - 主角血脉（第10章觉醒，第50章揭示）
 ```
 
-编辑 `01_source/overall_outline.yaml`：
+编辑 `user/source/overall_outline.yaml`：
 
 ```yaml
 整体结构:
@@ -220,13 +220,13 @@ python soundnovel.py cli init
 python soundnovel.py cli outline --stage act
 
 # 审查并调整幕规划
-edit 02_outline/act_plan.yaml
+edit user/output/outline/act_plan.yaml
 
 # 章级骨架
 python soundnovel.py cli outline --stage chapter
 
 # 审查并调整章骨架
-edit 02_outline/chapter_skeletons.yaml
+edit user/output/outline/chapter_skeletons.yaml
 
 # 场景级剧本（可单独生成某章）
 python soundnovel.py cli outline --stage scene --chapter 8
@@ -239,7 +239,7 @@ python soundnovel.py cli outline --stage scene --chapter 8
 python soundnovel.py cli expand --chapter 8
 
 # 查看生成的正文
- cat 03_draft/第0008章.txt
+ cat user/output/draft/第0008章.txt
 ```
 
 ## 创作工作流
@@ -293,7 +293,7 @@ python build_exe.py --clean
 
 ## 隐私与安全
 
-- API Key 存储在 `05_script/session.json` 中
+- API Key 存储在 `user/config/session.json` 中
 - `session.json` 已被加入 `.gitignore`
 - 生成的内容默认不提交到版本控制
 

@@ -1,7 +1,7 @@
 """
 大纲生成器
 负责基于原始素材生成章节大纲
-采用三阶段生成架构：幕级规划 → 章级骨架 → 场景级细化
+采用两阶段生成架构：幕级规划 → 章级骨架（骨架直接驱动扩写）
 """
 
 import json
@@ -9,97 +9,108 @@ import re
 import yaml
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime
 import logging
 
 from novel_generator.config.settings import Settings
 from novel_generator.utils.multi_model_client import MultiModelClient
 from novel_generator.core.ai_roles import AIRoleManager, AIRole
-from novel_generator.core.satisfaction_engine import SatisfactionEngine, SatisfactionPoint
-
 
 class RetryableGenerationError(Exception):
     pass
 
 
 class ActLevelPlanner:
-    """幕级规划器"""
+    """幕级规划器 — 单次API调用生成全部幕规划，源材料只注入一次"""
 
     def __init__(self, config: Dict[str, Any], ai_role_manager: AIRoleManager):
         self.config = config
         self.ai_role_manager = ai_role_manager
-        self.satisfaction_engine = SatisfactionEngine(config)
         self.logger = logging.getLogger(__name__)
 
     def generate_act_plan(
         self,
         core_setting: Dict[str, Any],
         overall_outline: Dict[str, Any],
-        num_acts: int = 3,
+        num_acts: int = 0,
         total_chapters: int = 150,
     ) -> Dict[str, Any]:
         """
-        生成幕级规划
-
-        步骤:
-        1. 调用 satisfaction_engine.calculate_pacing() 计算爽点分布
-        2. 调用 satisfaction_engine.assign_satisfaction_types() 分配类型
-        3. 构建Prompt（使用 04_prompt/prompts/outline_generation.yaml 中的幕级规划模板）
-        4. 调用API生成幕规划
-        5. 解析响应
-
-        返回: Dict 包含幕规划
+        生成幕级规划。单次API调用生成全部幕，AI在上下文中协调各幕避免重复。
         """
-        self.logger.info(f"开始生成幕级规划，共{num_acts}幕，{total_chapters}章")
+        act_structure = self._extract_act_structure(overall_outline)
+        actual_num_acts = len(act_structure) if act_structure else num_acts
 
-        # 1. 计算爽点分布
-        pacing = self.satisfaction_engine.calculate_pacing(total_chapters, num_acts)
+        self.logger.info(f"开始生成幕级规划（单次调用），共{actual_num_acts}幕，{total_chapters}章")
 
-        # 2. 分配爽点类型
-        satisfaction_points = self.satisfaction_engine.assign_satisfaction_types(
-            pacing, core_setting, overall_outline
+        prompt = self._build_all_acts_prompt(
+            core_setting, overall_outline, act_structure, actual_num_acts
         )
+        self.logger.debug(f"幕规划 Prompt 长度: {len(prompt)} 字符")
+        response = self._call_ai_api(prompt)
+        act_plan = self._parse_all_acts_response(response)
 
-        # 3. 逐幕生成规划
-        act_plan = {"幕规划": {}, "爽点分布": []}
-
-        for act_num in range(1, num_acts + 1):
-            prompt = self._build_act_planning_prompt(
-                act_num, core_setting, overall_outline, pacing, satisfaction_points
-            )
-
-            # 4. 调用API
-            response = self._call_ai_api(prompt)
-
-            # 5. 解析响应
-            act_data = self._parse_act_response(response, act_num)
-            act_plan["幕规划"][f"第{act_num}幕"] = act_data
-
-        # 保存爽点信息
-        act_plan["爽点分布"] = [
-            {
-                "章节": p.chapter,
-                "类型": p.sat_type,
-                "强度": p.intensity,
-                "描述": p.description,
-            }
-            for p in satisfaction_points
-        ]
-
-        self.logger.info(f"幕级规划生成完成，共{num_acts}幕")
+        self.logger.info(f"幕级规划生成完成，共{len(act_plan.get('幕规划', act_plan))}幕")
         return act_plan
 
-    def _build_act_planning_prompt(
+    def _extract_act_structure(
+        self, overall_outline: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """从整体大纲中提取幕结构信息（真实幕名、章范围、标题、概述）"""
+        outline_data = overall_outline.get("幕结构", overall_outline)
+        acts = []
+
+        for key, value in outline_data.items():
+            if not isinstance(value, dict):
+                continue
+            chapter_range = value.get("章节范围", "")
+            chapters = self._parse_chapter_range(chapter_range)
+            acts.append({
+                "name": key,
+                "章节范围": chapter_range,
+                "标题": value.get("标题", ""),
+                "概述": value.get("概述", ""),
+                "章数": chapters,
+                "剧情要点": value.get("剧情要点", []),
+            })
+
+        if not acts:
+            # fallback: 等分计算
+            total = overall_outline.get("总章节数", 150)
+            preset_num = max(3, len(overall_outline.get("幕结构", {})))
+            chapters_per_act = total // preset_num
+            for i in range(preset_num):
+                start = i * chapters_per_act + 1
+                end = min((i + 1) * chapters_per_act, total)
+                acts.append({
+                    "name": f"第{i + 1}幕",
+                    "章节范围": f"第{start}-{end}章",
+                    "标题": "",
+                    "概述": "",
+                    "章数": end - start + 1,
+                    "剧情要点": [],
+                })
+
+        return acts
+
+    def _parse_chapter_range(self, range_str: str) -> int:
+        """从章节范围字符串解析章数"""
+        m = re.search(r"第?\s*(\d+)\s*[-–到]\s*第?\s*(\d+)\s*章?", str(range_str))
+        if m:
+            return int(m.group(2)) - int(m.group(1)) + 1
+        m = re.search(r"第?\s*(\d+)\s*章?", str(range_str))
+        if m:
+            return 1
+        return 0
+
+    def _build_all_acts_prompt(
         self,
-        act_number: int,
         core_setting: Dict[str, Any],
         overall_outline: Dict[str, Any],
-        pacing: Any,
-        satisfaction_points: List[SatisfactionPoint],
+        act_structure: List[Dict[str, Any]],
+        num_acts: int,
     ) -> str:
-        """构建幕规划Prompt"""
-        # 加载模板
-        template_path = Path("04_prompt/prompts/outline_generation.yaml")
+        """构建一次性全部幕规划的Prompt"""
+        template_path = Path("user/prompts/outline_generation.yaml")
         template_data = {}
         if template_path.exists():
             with open(template_path, "r", encoding="utf-8") as f:
@@ -107,109 +118,103 @@ class ActLevelPlanner:
 
         template_str = template_data.get("templates", {}).get(
             "act_level_planning", {}
-        ).get("template", self._get_default_act_template())
+        ).get("template", "")
 
-        # 提取前幕摘要
-        previous_act_summary = ""
-        if act_number > 1:
-            prev_act_key = f"第{act_number - 1}幕"
-            if "幕结构" in overall_outline:
-                prev_act_data = overall_outline["幕结构"].get(prev_act_key, {})
-                if isinstance(prev_act_data, dict):
-                    previous_act_summary = prev_act_data.get("核心剧情", "")
+        if not template_str:
+            raise RetryableGenerationError("幕级规划模板为空，请检查 user/prompts/outline_generation.yaml")
 
-        # 获取本幕的爽点分布
-        chapters_per_act = pacing.total_chapters // pacing.num_acts
-        act_start = (act_number - 1) * chapters_per_act + 1
-        act_end = act_number * chapters_per_act
-
-        act_satisfaction_counts = {"face_slap": 0, "power_up": 0, "revelation": 0, "harvest": 0, "emotional": 0, "status_up": 0}
-
-        for p in satisfaction_points:
-            if act_start <= p.chapter <= act_end and p.sat_type in act_satisfaction_counts:
-                act_satisfaction_counts[p.sat_type] += 1
-
-        # 构建整体故事文本
-        overall_story = self._build_overall_story_text(overall_outline)
-
-        # 格式化核心设定
+        # 源材料
         core_setting_text = yaml.dump(core_setting, allow_unicode=True, default_flow_style=False)
+        overall_story = self._build_overall_story_text(overall_outline)
+        act_structure_text = self._format_act_structure(act_structure)
+
+        # 规划规则
+        planning_rules = self._build_planning_rules(core_setting, overall_outline)
 
         return template_str.format(
-            act_number=act_number,
+            num_acts=num_acts,
             core_setting=core_setting_text,
             overall_story=overall_story,
-            previous_act_summary=previous_act_summary,
-            face_slap_count=act_satisfaction_counts["face_slap"],
-            power_up_count=act_satisfaction_counts["power_up"],
-            revelation_count=act_satisfaction_counts["revelation"],
-            harvest_count=act_satisfaction_counts["harvest"],
-            emotional_count=act_satisfaction_counts["emotional"],
-            status_up_count=act_satisfaction_counts["status_up"],
+            act_structure_info=act_structure_text,
+            planning_rules=planning_rules,
         )
 
-    def _get_default_act_template(self) -> str:
-        """默认幕级规划模板"""
-        return """
-【任务】设计小说第{act_number}幕的整体结构
-
-1. 核心设定：
-{core_setting}
-
-2. 整体故事框架：
-{overall_story}
-
-3. 前幕摘要（如有）：
-{previous_act_summary}
-
-【幕级规划要求】
-1. 幕主题：明确本幕的核心主题和主线任务
-2. 幕目标：本幕结束时需要达成的主要目标
-3. 幕冲突：本幕的核心冲突和对抗
-4. 情感基调：本幕的整体情感走向
-
-【爽点战略布局】
-请在本幕中规划以下爽点类型（根据实际情况选择）：
-- 打脸爽点 (face_slap)：{face_slap_count} 处
-- 实力提升 (power_up)：{power_up_count} 处
-- 真相揭露 (revelation)：{revelation_count} 处
-- 收获宝物 (harvest)：{harvest_count} 处
-- 情感升华 (emotional)：{emotional_count} 处
-- 地位提升 (status_up)：{status_up_count} 处
-
-【输出格式】
-请以YAML格式输出：
-```yaml
-主题: "幕主题"
-目标: "幕目标"
-核心冲突: "核心冲突描述"
-情感基调: "情感基调"
-预估章数: 数字
-爽点布局:
-  - 类型: "爽点类型"
-    章节: "预计所在章节"
-    描述: "爽点简要描述"
-关键转折点:
-  - "转折点描述"
-章节划分:
-  - "本章任务"
-```
-"""
+    def _format_act_structure(self, act_structure: List[Dict[str, Any]]) -> str:
+        """格式化幕结构信息为可读文本"""
+        lines = []
+        for i, act in enumerate(act_structure):
+            chapter_range = act.get("章节范围", "")
+            title = act.get("标题", "")
+            overview = act.get("概述", "")
+            lines.append(f"第{i + 1}幕「{act['name']}」")
+            lines.append(f"  章节范围: {chapter_range}（共{act.get('章数', '?')}章）")
+            if title:
+                lines.append(f"  标题: {title}")
+            if overview:
+                lines.append(f"  概述: {overview}")
+            plot_points = act.get("剧情要点", [])
+            if plot_points:
+                lines.append("  关键剧情节点:")
+                for pt in plot_points:
+                    lines.append(f"    - {pt}")
+            lines.append("")
+        return "\n".join(lines)
 
     def _build_overall_story_text(self, overall_outline: Dict[str, Any]) -> str:
-        """构建整体故事文本"""
+        """构建整体故事文本（包含标题和概述）"""
         parts = []
 
         if "幕结构" in overall_outline:
             for key, value in overall_outline["幕结构"].items():
                 if isinstance(value, dict):
-                    plot = value.get("剧情逻辑脉络", value.get("核心剧情", ""))
-                    parts.append(f"{key}: {plot}")
+                    chapter_range = value.get("章节范围", "")
+                    title = value.get("标题", "")
+                    overview = value.get("概述", "")
+                    range_str = f"({chapter_range})" if chapter_range else ""
+                    detail = f"{title} — {overview}" if title or overview else ""
+                    parts.append(f"{key} {range_str}: {detail}")
                 else:
                     parts.append(f"{key}: {value}")
         else:
             for key, value in overall_outline.items():
                 parts.append(f"{key}: {value}")
+
+        return "\n".join(parts)
+
+    def _build_planning_rules(
+        self, core_setting: Dict[str, Any], _overall_outline: Dict[str, Any]
+    ) -> str:
+        """构建规划规则文本（含爽点融入策略）"""
+        protagonist = ""
+        if isinstance(core_setting, dict):
+            for key in ("主角", "主角设定", "protagonist"):
+                val = core_setting.get(key, "")
+                if isinstance(val, str) and val.strip():
+                    protagonist = val
+                    break
+                elif isinstance(val, dict):
+                    protagonist = val.get("姓名", val.get("名字", str(val)))
+                    break
+
+        parts = [
+            "【爽点融入策略】",
+            "请将以下爽点类型自然融入剧情发展：",
+            "",
+            "1. 身份反转型：底层/被轻视的身份在关键时刻展露实力，颠覆他人认知",
+            "2. 实力跃升型：瓶颈突破、奇遇收获、境界提升，以战斗或能力展示验证成长",
+            "3. 信息差揭露型：读者已知但剧中人不知的信息逐步揭示，造成戏剧性反转",
+            "4. 情感共鸣型：亲情/友情/爱情在关键节点的爆发，让读者产生情感满足",
+            "5. 地位提升型：获得认可、权力、地位的正向反馈",
+            "",
+            "融入要求：",
+            "- 每个爽点必须由剧情自然推动产生，杜绝硬植入",
+            "- 爽点前必有铺垫（压抑/悬念/积累），铺垫越长释放越爽",
+            "- 爽点后必有代价或新挑战，避免\"爽完就空虚\"",
+            "- 小爽点每5-8章一个，中爽点每幕2-3个，大爽点幕高潮处释放",
+        ]
+
+        if protagonist:
+            parts.insert(2, f"主角定位：{protagonist}")
 
         return "\n".join(parts)
 
@@ -221,7 +226,7 @@ class ActLevelPlanner:
                 messages=[
                     {
                         "role": "system",
-                        "content": "你是一个专业的小说结构规划师，擅长设计幕级故事架构。",
+                        "content": "你是一个专业的小说结构规划师，擅长设计幕级故事架构。输出必须严格遵循用户指定的JSON格式。",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -231,19 +236,36 @@ class ActLevelPlanner:
             self.logger.error(f"AI API调用失败: {e}")
             raise RetryableGenerationError(f"AI API调用失败: {e}")
 
-    def _parse_act_response(self, response: str, act_number: int) -> Dict[str, Any]:
-        """解析幕规划响应"""
+    def _parse_all_acts_response(self, response: str) -> Dict[str, Any]:
+        """解析全部幕规划响应"""
         try:
             cleaned = self._clean_markdown_response(response)
-            data = yaml.safe_load(cleaned)
+            data = json.loads(cleaned)
 
             if isinstance(data, dict):
-                return data
+                if "幕规划" in data:
+                    return data
+                # 兼容驼峰命名的key
+                for key in list(data.keys()):
+                    if "幕" in key and isinstance(data[key], dict) and len(data[key]) > 1:
+                        return {"幕规划": data}
+                return {"幕规划": data}
             else:
-                return {"原始响应": response[:500]}
+                self.logger.warning("解析结果非字典，返回原始内容片段")
+                return {"幕规划": {"原始响应": response[:800]}}
+        except json.JSONDecodeError as e:
+            self.logger.warning(f"JSON解析失败: {e}，尝试YAML解析")
+            try:
+                cleaned = self._clean_markdown_response(response)
+                data = yaml.safe_load(cleaned)
+                if isinstance(data, dict):
+                    return {"幕规划": data}
+            except Exception:
+                pass
+            return {"幕规划": {"原始响应": response[:800]}}
         except Exception as e:
             self.logger.warning(f"解析幕规划响应失败: {e}")
-            return {"原始响应": response[:500]}
+            return {"幕规划": {"原始响应": response[:800]}}
 
     def _clean_markdown_response(self, response: str) -> str:
         """清理Markdown格式的响应"""
@@ -251,7 +273,8 @@ class ActLevelPlanner:
         cleaned_lines = []
 
         for line in lines:
-            if line.strip() in ["```yaml", "```", "```yml"]:
+            stripped = line.strip()
+            if stripped.startswith("```"):
                 continue
             cleaned_lines.append(line)
 
@@ -259,62 +282,112 @@ class ActLevelPlanner:
 
 
 class ChapterSkeletonGenerator:
-    """章级骨架生成器"""
+    """章级骨架生成器 — 批次模式：一次API调用生成一批章，源材料只注入一次"""
 
-    def __init__(self, config: Dict[str, Any], ai_role_manager: AIRoleManager, act_plan: Dict[str, Any]):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        ai_role_manager: AIRoleManager,
+        act_plan: Dict[str, Any],
+        core_setting: Dict[str, Any] = None,
+        overall_outline: Dict[str, Any] = None,
+        existing_skeletons: Dict[str, Any] = None,
+        context_window: int = 15,
+    ):
         self.config = config
         self.ai_role_manager = ai_role_manager
         self.act_plan = act_plan
+        self.core_setting = core_setting or {}
+        self.overall_outline = overall_outline or {}
+        self.existing_skeletons = existing_skeletons or {}
+        self.context_window = context_window
         self.logger = logging.getLogger(__name__)
 
     def generate_chapter_skeletons(
         self, act_number: int, chapter_range: Tuple[int, int]
     ) -> Dict[str, Any]:
         """
-        为指定幕生成章级骨架
-
-        步骤:
-        1. 获取该幕的爽点布局
-        2. 构建Prompt（使用 yaml 文件中的章级骨架模板）
-        3. 调用API批量生成章节骨架
-        4. 解析响应
+        为指定幕生成一批章级骨架（单次API调用，解析失败时自动重试）。
 
         返回: Dict {章节号: 骨架内容}
         """
-        self.logger.info(f"开始生成第{act_number}幕的章级骨架，章节范围: {chapter_range}")
+        start_ch, end_ch = chapter_range
+        batch_count = end_ch - start_ch + 1
+        self.logger.info(f"生成章级骨架批次: 第{start_ch}-{end_ch}章 ({batch_count}章)")
 
-        skeletons = {}
-        act_data = self.act_plan.get("幕规划", {}).get(f"第{act_number}幕", {})
-        satisfaction_layout = self.act_plan.get("爽点分布", [])
+        act_data, _ = self._find_act_data(act_number)
 
-        # 批量生成或逐章生成
-        start_chapter, end_chapter = chapter_range
-        batch_size = 5  # 每批生成5章
+        prompt = self._build_batch_skeleton_prompt(
+            act_number, act_data, chapter_range
+        )
+        self.logger.debug(f"章骨架 Prompt 长度: {len(prompt)} 字符")
 
-        for batch_start in range(start_chapter, end_chapter + 1, batch_size):
-            batch_end = min(batch_start + batch_size - 1, end_chapter)
-
-            prompt = self._build_skeleton_prompt(
-                act_number, act_data, (batch_start, batch_end), satisfaction_layout
-            )
-
+        # 重试循环：解析失败时最多重试2次
+        max_retries = 2
+        for attempt in range(max_retries + 1):
             response = self._call_ai_api(prompt)
-            batch_skeletons = self._parse_skeleton_response(response)
-            skeletons.update(batch_skeletons)
+            skeletons = self._parse_batch_skeleton_response(response, chapter_range)
 
-        self.logger.info(f"章级骨架生成完成，共{len(skeletons)}章")
-        return skeletons
+            if skeletons:
+                self.logger.info(f"章级骨架批次完成，共{len(skeletons)}章")
+                return skeletons
 
-    def _build_skeleton_prompt(
+            if attempt < max_retries:
+                self.logger.warning(
+                    f"批次第{start_ch}-{end_ch}章解析失败，第{attempt + 1}次重试..."
+                )
+                # 重试时在prompt末尾追加JSON格式强调
+                if "—— 重要提醒" not in prompt:
+                    prompt += (
+                        f"\n\n—— 重要提醒（第{attempt + 1}次重试）——\n"
+                        "上轮输出JSON格式有误导致解析失败。请务必：\n"
+                        "1. 确保所有字符串值中的双引号已转义（\\\"）\n"
+                        "2. 不要在字符串值内使用未转义的控制字符\n"
+                        "3. 确保所有逗号、花括号、方括号配对正确\n"
+                        "4. 严格遵循输出格式模板，不要遗漏任何字段"
+                    )
+
+        self.logger.error(f"批次第{start_ch}-{end_ch}章解析失败，已重试{max_retries}次，返回空结果")
+        return {}
+
+    def _find_act_data(self, act_number: int) -> Tuple[Dict[str, Any], str]:
+        """根据幕序号在act_plan中找到对应的幕数据"""
+        plan = self.act_plan.get("幕规划", {})
+        keys = list(plan.keys())
+        if act_number <= len(keys):
+            return plan[keys[act_number - 1]], keys[act_number - 1]
+        return plan.get(f"第{act_number}幕", {}), f"第{act_number}幕"
+
+    def _parse_chapter_phases(
+        self, chapter_divisions: List[str], chapter_range: Tuple[int, int]
+    ) -> Dict[int, str]:
+        """从章节划分列表中解析每章所属的阶段描述（支持范围和单章）"""
+        phase_map: Dict[int, str] = {}
+        for entry in chapter_divisions:
+            desc = str(entry).strip()
+            m = re.search(r"第?\s*(\d+)\s*[-–到]\s*第?\s*(\d+)\s*章?", desc)
+            if m:
+                phase_start = int(m.group(1))
+                phase_end = int(m.group(2))
+            else:
+                m = re.search(r"第?\s*(\d+)\s*章", desc)
+                if m:
+                    phase_start = phase_end = int(m.group(1))
+                else:
+                    continue
+            for ch in range(phase_start, phase_end + 1):
+                if chapter_range[0] <= ch <= chapter_range[1]:
+                    phase_map[ch] = desc
+        return phase_map
+
+    def _build_batch_skeleton_prompt(
         self,
         act_number: int,
         act_data: Dict[str, Any],
         chapter_range: Tuple[int, int],
-        satisfaction_layout: List[Dict[str, Any]],
     ) -> str:
-        """构建章骨架Prompt"""
-        # 加载模板
-        template_path = Path("04_prompt/prompts/outline_generation.yaml")
+        """构建批次章骨架Prompt"""
+        template_path = Path("user/prompts/outline_generation.yaml")
         template_data = {}
         if template_path.exists():
             with open(template_path, "r", encoding="utf-8") as f:
@@ -322,89 +395,103 @@ class ChapterSkeletonGenerator:
 
         template_str = template_data.get("templates", {}).get(
             "chapter_skeleton", {}
-        ).get("template", self._get_default_skeleton_template())
+        ).get("template", "")
 
-        batch_start, batch_end = chapter_range
-        prompts = []
+        if not template_str:
+            raise RetryableGenerationError("章级骨架模板为空，请检查 user/prompts/outline_generation.yaml")
 
-        for chapter_num in range(batch_start, batch_end + 1):
-            # 检查是否是爽点章节
-            sat_info = None
-            for sat in satisfaction_layout:
-                if sat.get("章节") == chapter_num:
-                    sat_info = sat
-                    break
+        start_ch, end_ch = chapter_range
+        batch_count = end_ch - start_ch + 1
 
-            # 计算幕进度
-            chapters_in_act = act_data.get("预估章数", 50)
-            chapter_in_act = chapter_num - (act_number - 1) * chapters_in_act
-            act_progress = int((chapter_in_act / chapters_in_act) * 100) if chapters_in_act > 0 else 50
+        # 源材料
+        core_setting_text = yaml.dump(self.core_setting, allow_unicode=True, default_flow_style=False)
+        overall_story = self._build_overall_story_text()
+        act_info = yaml.dump(act_data, allow_unicode=True, default_flow_style=False)
 
-            # 确定约束标记
-            continuity_required = chapter_num > batch_start
-            narrative_line = "主线" if chapter_num % 5 != 0 else "新线"  # 每5章一个支线
-            satisfaction_type = sat_info.get("类型", "") if sat_info else None
-            word_count_target = 3000 if sat_info else 2000
+        # 前文大纲
+        previous_skeletons = self._format_previous_skeletons(start_ch)
 
-            act_info = yaml.dump(act_data, allow_unicode=True, default_flow_style=False)
+        # 批次阶段指引
+        phase_map = self._parse_chapter_phases(act_data.get("章节划分", []), chapter_range)
+        batch_phases = self._format_batch_phases(chapter_range, phase_map)
 
-            prompt = template_str.format(
-                chapter_num=chapter_num,
-                act_info=act_info,
-                core_setting="参见整体设定",
-                previous_chapter_summary="参见前章",
-                act_progress=act_progress,
-                continuity_required=str(continuity_required).lower(),
-                narrative_line=narrative_line,
-                satisfaction_type=satisfaction_type if satisfaction_type else "",
-                word_count_target=word_count_target,
-            )
-            prompts.append(prompt)
+        return template_str.format(
+            chapter_range=f"{start_ch}-{end_ch}",
+            batch_count=batch_count,
+            core_setting=core_setting_text,
+            overall_story=overall_story,
+            act_info=act_info,
+            previous_skeletons=previous_skeletons,
+            batch_phases=batch_phases,
+        )
 
-        return "\n\n".join(prompts)
+    def _build_overall_story_text(self) -> str:
+        """构建整体故事框架文本"""
+        parts = []
+        outline_data = self.overall_outline.get("幕结构", self.overall_outline)
+        for key, value in outline_data.items():
+            if isinstance(value, dict):
+                chapter_range = value.get("章节范围", "")
+                title = value.get("标题", "")
+                overview = value.get("概述", "")
+                range_str = f"({chapter_range})" if chapter_range else ""
+                detail = f"{title} — {overview}" if title or overview else ""
+                parts.append(f"{key} {range_str}: {detail}")
+            else:
+                parts.append(f"{key}: {value}")
+        return "\n".join(parts)
 
-    def _get_default_skeleton_template(self) -> str:
-        """默认章级骨架模板"""
-        return """
-【任务】生成第{chapter_num}章的详细骨架
+    def _format_previous_skeletons(self, current_start: int) -> str:
+        """构建前N章已生成大纲的紧凑摘要"""
+        window = self.context_window
+        prev_start = max(1, current_start - window)
+        prev_chapters = []
 
-1. 所属幕信息：
-{act_info}
+        for ch in range(prev_start, current_start):
+            key = f"第{ch}章"
+            sk = self.existing_skeletons.get(key)
+            if sk:
+                title = sk.get("标题", "")
+                core = sk.get("核心事件", "")
+                ending = sk.get("结尾卡点", "")
+                foreshadow = sk.get("伏笔处理", {})
+                planted = foreshadow.get("埋设", []) if isinstance(foreshadow, dict) else []
+                parts = [key]
+                if title:
+                    parts.append(f"《{title}》")
+                if core:
+                    parts.append(f"核心: {core}")
+                if ending:
+                    parts.append(f"结尾: {ending}")
+                if planted:
+                    parts.append(f"埋笔: {'; '.join(planted[:3])}")
+                prev_chapters.append(" | ".join(parts))
 
-2. 幕进度：{act_progress}%
+        if prev_chapters:
+            return "以下为已生成的前文大纲（按章序），请确保本批次剧情与上文衔接：\n" + "\n".join(prev_chapters)
+        return "（本批次为首批章节，无前文大纲）"
 
-【本章约束标记】
-- continuity_required: {continuity_required}
-- narrative_line: {narrative_line}
-- satisfaction_type: {satisfaction_type}
-- word_count_target: {word_count_target}
+    def _format_batch_phases(
+        self, chapter_range: Tuple[int, int], phase_map: Dict[int, str]
+    ) -> str:
+        """格式化批次阶段指引"""
+        start_ch, end_ch = chapter_range
+        lines = []
+        # Group consecutive chapters with the same phase
+        i = start_ch
+        while i <= end_ch:
+            phase = phase_map.get(i, "（从上方幕规划的章节划分中推断本章剧情）")
+            # Find how many consecutive chapters share this phase
+            j = i
+            while j + 1 <= end_ch and phase_map.get(j + 1) == phase:
+                j += 1
+            if i == j:
+                lines.append(f"第{i}章 → {phase}")
+            else:
+                lines.append(f"第{i}-{j}章 → {phase}")
+            i = j + 1
 
-【输出格式】
-请以YAML格式输出：
-```yaml
-第{chapter_num}章:
-  标题: "章节标题"
-  字数目标: {word_count_target}
-  约束标记:
-    continuity_required: {continuity_required}
-    narrative_line: "{narrative_line}"
-    satisfaction_type: "{satisfaction_type}"
-  核心事件: "核心事件描述"
-  人物行动:
-    主角: "主角行动"
-    关键配角: "配角行动"
-  场景列表:
-    - 场景1:
-        地点: "场景地点"
-        内容: "场景内容"
-        字数: 预估字数
-  情绪曲线: [铺垫, 积累, 爆发, 回落]
-  伏笔处理:
-    埋设: ["伏笔1"]
-    回收: ["伏笔2"]
-  结尾卡点: "结尾悬念"
-```
-"""
+        return "\n".join(lines) if lines else "（参见幕规划章节划分）"
 
     def _call_ai_api(self, prompt: str) -> str:
         """调用AI API"""
@@ -414,7 +501,7 @@ class ChapterSkeletonGenerator:
                 messages=[
                     {
                         "role": "system",
-                        "content": "你是一个专业的小说章节规划师，擅长设计章节骨架结构。",
+                        "content": "你是一个专业的小说章节规划师，擅长设计章节骨架结构，确保章节间的因果链、情绪节奏和伏笔衔接到位。输出必须严格遵循用户指定的JSON格式。",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -424,376 +511,90 @@ class ChapterSkeletonGenerator:
             self.logger.error(f"AI API调用失败: {e}")
             raise RetryableGenerationError(f"AI API调用失败: {e}")
 
-    def _parse_skeleton_response(self, response: str) -> Dict[str, Any]:
-        """解析章骨架响应"""
+    def _parse_batch_skeleton_response(
+        self, response: str, chapter_range: Tuple[int, int]
+    ) -> Dict[str, Any]:
+        """解析批次章骨架响应"""
+        start_ch, end_ch = chapter_range
         try:
             cleaned = self._clean_markdown_response(response)
-            data = yaml.safe_load(cleaned)
+            data = json.loads(cleaned)
 
-            if isinstance(data, dict):
-                return data
-            else:
-                return {}
+            if not isinstance(data, dict):
+                raise ValueError("响应不是JSON对象")
+
+            # Filter and validate chapters
+            skeletons = {}
+            for ch in range(start_ch, end_ch + 1):
+                key = f"第{ch}章"
+                if key in data:
+                    skeletons[key] = data[key]
+
+            if not skeletons:
+                # Maybe the response is a list: try numeric keys or re-index
+                for key, value in data.items():
+                    if "第" in key and "章" in key:
+                        skeletons[key] = value
+                if not skeletons:
+                    self.logger.warning(f"未解析到章节骨架，响应前500字符: {response[:500]}")
+                    return {}
+
+            self.logger.info(f"解析到 {len(skeletons)} 章骨架")
+            return skeletons
+
+        except json.JSONDecodeError as e:
+            self.logger.warning(f"JSON解析失败: {e}，尝试YAML解析")
+            try:
+                cleaned = self._clean_markdown_response(response)
+                data = yaml.safe_load(cleaned)
+                if isinstance(data, dict):
+                    skeletons = {}
+                    for ch in range(start_ch, end_ch + 1):
+                        key = f"第{ch}章"
+                        if key in data:
+                            skeletons[key] = data[key]
+                    return skeletons
+            except Exception:
+                pass
+            self.logger.error(f"批次解析失败，响应前800字符: {response[:800]}")
+            return {}
         except Exception as e:
-            self.logger.warning(f"解析章骨架响应失败: {e}")
+            self.logger.warning(f"解析批次响应失败: {e}")
             return {}
 
     def _clean_markdown_response(self, response: str) -> str:
-        """清理Markdown格式的响应"""
+        """清理Markdown格式的响应并修复常见JSON问题"""
+        # 移除markdown代码块标记
         lines = response.split("\n")
         cleaned_lines = []
-
         for line in lines:
-            if line.strip() in ["```yaml", "```", "```yml"]:
+            if line.strip().startswith("```"):
                 continue
             cleaned_lines.append(line)
+        result = "\n".join(cleaned_lines)
 
-        return "\n".join(cleaned_lines)
-
-
-class SceneLevelDetailer:
-    """场景级细化器"""
-
-    SATISFACTION_TEMPLATES = {
-        "face_slap": "04_prompt/prompts/satisfaction_prompts/face_slap.yaml",
-        "power_up": "04_prompt/prompts/satisfaction_prompts/power_up.yaml",
-    }
-
-    def __init__(self, config: Dict[str, Any], ai_role_manager: AIRoleManager):
-        self.config = config
-        self.ai_role_manager = ai_role_manager
-        self.logger = logging.getLogger(__name__)
-
-    def generate_scene_detail(
-        self,
-        chapter_num: int,
-        chapter_skeleton: Dict[str, Any],
-        previous_context: str = "",
-        next_context: str = "",
-    ) -> Dict[str, Any]:
-        """
-        将章骨架细化为场景级剧本
-
-        判断:
-        - 如果是爽点章节（is_satisfaction=true）: 调用 _generate_satisfaction_scene_detail()
-        - 否则: 调用 _generate_normal_scene_detail()
-
-        返回: Dict 场景级剧本
-        """
-        self.logger.info(f"开始细化第{chapter_num}章的场景")
-
-        # 判断是否是爽点章节
-        constraint_marks = chapter_skeleton.get("约束标记", {})
-        is_satisfaction = bool(constraint_marks.get("satisfaction_type"))
-
-        if is_satisfaction:
-            detail = self._generate_satisfaction_scene_detail(
-                chapter_num, chapter_skeleton, previous_context, next_context
-            )
-        else:
-            detail = self._generate_normal_scene_detail(
-                chapter_num, chapter_skeleton, previous_context, next_context
-            )
-
-        self.logger.info(f"第{chapter_num}章场景细化完成")
-        return detail
-
-    def _generate_satisfaction_scene_detail(
-        self,
-        chapter_num: int,
-        skeleton: Dict[str, Any],
-        prev_context: str,
-        next_context: str,
-    ) -> Dict[str, Any]:
-        """
-        生成爽点章节的场景级设计
-
-        使用 04_prompt/prompts/satisfaction_prompts/ 中的专用模板
-        输出必须包含4个场景：铺垫→执行→收益→钩子
-        """
-        sat_type = skeleton.get("约束标记", {}).get("satisfaction_type", "face_slap")
-
-        # 加载爽点模板
-        template_path = Path(self.SATISFACTION_TEMPLATES.get(sat_type, ""))
-        template_data = {}
-        if template_path and template_path.exists():
-            with open(template_path, "r", encoding="utf-8") as f:
-                template_data = yaml.safe_load(f)
-
-        template_str = template_data.get("template", self._get_default_satisfaction_template(sat_type))
-
-        # 构建场景列表（4场景结构）
-        scenes = [
-            {
-                "场景ID": f"S{chapter_num}-1",
-                "类型": "铺垫",
-                "地点": skeleton.get("场景列表", [{}])[0].get("地点", "待定"),
-                "节拍设计": {
-                    "钩子": "设置悬念或冲突",
-                    "上升动作": "情节推进",
-                    "转折点": "关键变化",
-                    "落点": "场景收束",
-                },
-                "对白要点": [],
-                "感官细节": {},
-            },
-            {
-                "场景ID": f"S{chapter_num}-2",
-                "类型": "执行",
-                "地点": skeleton.get("场景列表", [{}, {}])[1].get("地点", "待定") if len(skeleton.get("场景列表", [])) > 1 else "待定",
-                "节拍设计": {
-                    "钩子": "爽点触发",
-                    "上升动作": "爽点展开",
-                    "转折点": "高潮时刻",
-                    "落点": "爽点达成",
-                },
-                "对白要点": [],
-                "感官细节": {},
-            },
-            {
-                "场景ID": f"S{chapter_num}-3",
-                "类型": "收益",
-                "地点": skeleton.get("场景列表", [{}, {}, {}])[2].get("地点", "待定") if len(skeleton.get("场景列表", [])) > 2 else "待定",
-                "节拍设计": {
-                    "钩子": "收益展现",
-                    "上升动作": "收益累积",
-                    "转折点": "认知转变",
-                    "落点": "满足达成",
-                },
-                "对白要点": [],
-                "感官细节": {},
-            },
-            {
-                "场景ID": f"S{chapter_num}-4",
-                "类型": "钩子",
-                "地点": skeleton.get("场景列表", [{}, {}, {}, {}])[3].get("地点", "待定") if len(skeleton.get("场景列表", [])) > 3 else "待定",
-                "节拍设计": {
-                    "钩子": "悬念设置",
-                    "上升动作": "暗示发展",
-                    "转折点": "新线索出现",
-                    "落点": "章节收束",
-                },
-                "对白要点": [],
-                "感官细节": {},
-            },
-        ]
-
-        return {
-            "标题": skeleton.get("标题", f"第{chapter_num}章"),
-            "总字数": skeleton.get("字数目标", 3000),
-            "章节功能": "satisfaction",
-            "爽点标记": {
-                "is_satisfaction": True,
-                "type": sat_type,
-                "intensity": 7,
-            },
-            "场景列表": scenes,
-        }
-
-    def _get_default_satisfaction_template(self, sat_type: str) -> str:
-        """获取默认爽点模板"""
-        if sat_type == "face_slap":
-            return """
-【任务】撰写打脸爽点场景
-
-1. 场景背景：
-{scene_background}
-
-【打脸爽点4场景结构】
-## 场景1：压迫 - Setup
-## 场景2：爆发 - Trigger
-## 场景3：反转 - Climax
-## 场景4：收束 - Resolution
-
-请输出4场景正文。
-"""
-        else:
-            return """
-【任务】撰写爽点场景
-
-【4场景结构】
-## 场景1：铺垫
-## 场景2：执行
-## 场景3：收益
-## 场景4：钩子
-
-请输出4场景正文。
-"""
-
-    def _generate_normal_scene_detail(
-        self,
-        chapter_num: int,
-        skeleton: Dict[str, Any],
-        prev_context: str,
-        next_context: str,
-    ) -> Dict[str, Any]:
-        """生成普通章节的场景级设计"""
-        # 加载模板
-        template_path = Path("04_prompt/prompts/outline_generation.yaml")
-        template_data = {}
-        if template_path.exists():
-            with open(template_path, "r", encoding="utf-8") as f:
-                template_data = yaml.safe_load(f)
-
-        template_str = template_data.get("templates", {}).get(
-            "scene_refinement", {}
-        ).get("template", self._get_default_scene_template())
-
-        # 构建Prompt
-        skeleton_yaml = yaml.dump(skeleton, allow_unicode=True, default_flow_style=False)
-
-        prompt = template_str.format(
-            chapter_num=chapter_num,
-            chapter_skeleton=skeleton_yaml,
-            character_context=prev_context,
-            foreshadowing_context="参见伏笔追踪",
-            emotional_context="参见情感弧线",
-        )
-
-        # 调用API生成详细场景
-        try:
-            response = self.ai_role_manager.chat_completion(
-                role=AIRole.GENERATOR,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是一个专业的小说场景设计师，擅长细化场景细节。",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
-
-            # 解析响应
-            detail = self._parse_scene_response(response, chapter_num, skeleton)
-            return detail
-
-        except Exception as e:
-            self.logger.error(f"生成普通场景失败: {e}")
-            # 返回基础结构
-            return self._build_fallback_scene_detail(chapter_num, skeleton)
-
-    def _get_default_scene_template(self) -> str:
-        """默认场景细化模板"""
-        return """
-【任务】细化第{chapter_num}章的场景内容
-
-1. 章级骨架：
-{chapter_skeleton}
-
-【场景细化要求】
-1. 每个场景拆分为具体的情节点
-2. 标注人物情感变化节点
-3. 标注感官描写重点
-4. 标注对话要点
-5. 标注动作戏细节（如有）
-
-【输出格式】
-请以YAML格式输出：
-```yaml
-场景细化:
-  章节: {chapter_num}
-  场景详情:
-    - 场景编号: 1
-      地点: "地点"
-      氛围: "场景氛围"
-      情节点:
-        - 点1:
-            内容: "情节内容"
-            人物情感: "情感状态"
-            感官重点: "感官描写"
-            字数: 数字
-```
-"""
-
-    def _parse_scene_response(
-        self, response: str, chapter_num: int, skeleton: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """解析场景响应"""
-        try:
-            cleaned = self._clean_markdown_response(response)
-            data = yaml.safe_load(cleaned)
-
-            if isinstance(data, dict):
-                # 提取场景详情
-                scene_detail = data.get("场景细化", data)
-
-                # 构建标准输出格式
-                scenes = []
-                scene_list = scene_detail.get("场景详情", [])
-
-                for i, scene_data in enumerate(scene_list, 1):
-                    scene = {
-                        "场景ID": f"S{chapter_num}-{i}",
-                        "类型": scene_data.get("类型", "叙事"),
-                        "地点": scene_data.get("地点", skeleton.get("场景列表", [{}])[i-1].get("地点", "待定") if i <= len(skeleton.get("场景列表", [])) else "待定"),
-                        "节拍设计": {
-                            "钩子": scene_data.get("情节点", [{}])[0].get("内容", "场景开始"),
-                            "上升动作": scene_data.get("情节点", [{}, {}])[1].get("内容", "情节发展") if len(scene_data.get("情节点", [])) > 1 else "情节发展",
-                            "转折点": scene_data.get("情节点", [{}, {}, {}])[2].get("内容", "关键转折") if len(scene_data.get("情节点", [])) > 2 else "关键转折",
-                            "落点": scene_data.get("情节点", [{}])[-1].get("内容", "场景收束"),
-                        },
-                        "对白要点": scene_data.get("关键对话", []),
-                        "感官细节": scene_data.get("感官细节", {}),
-                    }
-                    scenes.append(scene)
-
-                return {
-                    "标题": skeleton.get("标题", f"第{chapter_num}章"),
-                    "总字数": skeleton.get("字数目标", 2000),
-                    "章节功能": "normal",
-                    "爽点标记": {"is_satisfaction": False},
-                    "场景列表": scenes,
-                }
-
-            else:
-                return self._build_fallback_scene_detail(chapter_num, skeleton)
-
-        except Exception as e:
-            self.logger.warning(f"解析场景响应失败: {e}")
-            return self._build_fallback_scene_detail(chapter_num, skeleton)
-
-    def _build_fallback_scene_detail(self, chapter_num: int, skeleton: Dict[str, Any]) -> Dict[str, Any]:
-        """构建回退场景详情"""
-        scenes = []
-        for i, scene_data in enumerate(skeleton.get("场景列表", []), 1):
-            scene = {
-                "场景ID": f"S{chapter_num}-{i}",
-                "类型": "叙事",
-                "地点": scene_data.get("地点", "待定"),
-                "节拍设计": {
-                    "钩子": "场景开始",
-                    "上升动作": "情节发展",
-                    "转折点": "关键转折",
-                    "落点": "场景收束",
-                },
-                "对白要点": [],
-                "感官细节": {},
-            }
-            scenes.append(scene)
-
-        return {
-            "标题": skeleton.get("标题", f"第{chapter_num}章"),
-            "总字数": skeleton.get("字数目标", 2000),
-            "章节功能": "normal",
-            "爽点标记": {"is_satisfaction": False},
-            "场景列表": scenes,
-        }
-
-    def _clean_markdown_response(self, response: str) -> str:
-        """清理Markdown格式的响应"""
-        lines = response.split("\n")
-        cleaned_lines = []
-
-        for line in lines:
-            if line.strip() in ["```yaml", "```", "```yml"]:
+        # 修复JSON字符串内未转义的控制字符（\x00-\x1f 除了 \n）
+        # AI有时在字符串值中输出字面换行/制表符等，导致json.loads失败
+        in_string = False
+        escaped = False
+        chars = list(result)
+        for i, ch in enumerate(chars):
+            if escaped:
+                escaped = False
                 continue
-            cleaned_lines.append(line)
-
-        return "\n".join(cleaned_lines)
+            if ch == '\\':
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string and ord(ch) < 0x20 and ch not in ('\n',):
+                chars[i] = ch = ' '
+        return ''.join(chars)
 
 
 class OutlineGenerator:
-    """大纲生成器（整合三阶段）"""
+    """大纲生成器（两阶段：幕规划 → 章骨架，骨架直接驱动扩写）"""
 
     def __init__(
         self, config: Dict[str, Any], multi_model_client: MultiModelClient = None
@@ -808,88 +609,160 @@ class OutlineGenerator:
 
         self.ai_role_manager = AIRoleManager(config, self.multi_model_client)
 
+        self.output_dir = Path("user/output/outline")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.act_plan_file = self.output_dir / "act_plan.json"
+        self.outline_file = self.output_dir / "outline.json"
+        # skeletons_file 与 outline_file 统一，不再生成两个文件
+        self.skeletons_file = self.outline_file
+
+    def _load_existing_act_plan(self) -> Optional[Dict[str, Any]]:
+        """加载已存在的幕规划"""
+        if self.act_plan_file.exists():
+            try:
+                with open(self.act_plan_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.warning(f"加载幕规划文件失败: {e}")
+        return None
+
+    def _save_act_plan(self, act_plan: Dict[str, Any]) -> bool:
+        """保存幕规划"""
+        try:
+            with open(self.act_plan_file, "w", encoding="utf-8") as f:
+                json.dump(act_plan, f, ensure_ascii=False, indent=2)
+            self.logger.info(f"幕规划已保存: {self.act_plan_file}")
+            return True
+        except Exception as e:
+            self.logger.error(f"保存幕规划失败: {e}")
+            return False
+
+    def _load_existing_skeletons(self) -> Dict[str, Any]:
+        """加载已存在的大纲"""
+        if self.skeletons_file.exists():
+            try:
+                with open(self.skeletons_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.warning(f"加载骨架文件失败: {e}")
+        return {}
+
+    def _save_skeletons(self, skeletons: Dict[str, Any]) -> bool:
+        """保存章级骨架"""
+        try:
+            with open(self.skeletons_file, "w", encoding="utf-8") as f:
+                json.dump(skeletons, f, ensure_ascii=False, indent=2)
+            self.logger.info(f"大纲已保存: {self.skeletons_file}")
+            return True
+        except Exception as e:
+            self.logger.error(f"保存骨架失败: {e}")
+            return False
+
+    def _get_first_missing_chapter(self, existing: Dict[str, Any], start: int, end: int) -> int:
+        """获取第一个缺失的章节号"""
+        for ch in range(start, end + 1):
+            if f"第{ch}章" not in existing:
+                return ch
+        return end + 1
+
     def generate_outline_v2(
         self,
         core_setting: Dict[str, Any],
         overall_outline: Dict[str, Any],
-        num_acts: int = 3,
+        num_acts: int = 0,
         chapter_range: Optional[Tuple[int, int]] = None,
     ) -> Dict[str, Any]:
         """
-        新版大纲生成（三阶段）
+        两阶段大纲生成（幕规划 → 章骨架），骨架直接驱动扩写。
 
         流程:
-        1. Stage 1: 幕级规划
-        2. Stage 2: 章级骨架（批量）
-        3. Stage 3: 场景级细化（按需）
+        1. Stage 1: 幕级规划（可复用，已存在则跳过）
+        2. Stage 2: 章级骨架（增量，跳过已生成）
 
-        返回: Dict 完整大纲（场景级）
+        返回: Dict 章级骨架（即最终大纲）
         """
-        self.logger.info("开始三阶段大纲生成")
+        self.logger.info("开始两阶段大纲生成（支持增量）")
 
-        # 提取总章节数
         total_chapters = self.extract_total_chapters(overall_outline)
+        if num_acts <= 0:
+            num_acts = self.extract_num_acts(overall_outline)
         if chapter_range is None:
             chapter_range = (1, total_chapters)
 
-        # Stage 1: 幕级规划
+        start_ch, end_ch = chapter_range
+
+        # Stage 1: 幕级规划（检查复用）
         self.logger.info("Stage 1: 幕级规划")
-        act_planner = ActLevelPlanner(self.config, self.ai_role_manager)
-        act_plan = act_planner.generate_act_plan(
-            core_setting, overall_outline, num_acts, total_chapters
-        )
+        act_plan = self._load_existing_act_plan()
+        if act_plan:
+            self.logger.info("幕规划已存在，复用")
+        else:
+            act_planner = ActLevelPlanner(self.config, self.ai_role_manager)
+            act_plan = act_planner.generate_act_plan(
+                core_setting, overall_outline, num_acts, total_chapters
+            )
+            self._save_act_plan(act_plan)
+            self.logger.info("幕规划生成完成")
 
-        # Stage 2: 章级骨架（批量）
-        self.logger.info("Stage 2: 章级骨架生成")
+        # Stage 2: 章级骨架（增量生成，批次模式）
+        self.logger.info("Stage 2: 章级骨架生成（批次增量）")
+        existing_skeletons = self._load_existing_skeletons()
+
+        gen_config = self.config.get("generation", {})
+        batch_size = gen_config.get("skeleton_batch_size", 10)
+        context_window = gen_config.get("skeleton_context_window", 15)
+
         skeleton_generator = ChapterSkeletonGenerator(
-            self.config, self.ai_role_manager, act_plan
+            self.config, self.ai_role_manager, act_plan,
+            core_setting=core_setting,
+            overall_outline=overall_outline,
+            existing_skeletons=existing_skeletons,
+            context_window=context_window,
         )
 
-        all_skeletons = {}
-        chapters_per_act = total_chapters // num_acts
+        first_missing = self._get_first_missing_chapter(existing_skeletons, start_ch, end_ch)
+        if first_missing > end_ch:
+            self.logger.info(f"章级骨架已完整，范围 {start_ch}-{end_ch} 全部存在")
+        else:
+            self.logger.info(f"从第 {first_missing} 章开始生成骨架（批次大小={batch_size}, 上下文窗口={context_window}）")
 
-        for act_num in range(1, num_acts + 1):
-            act_start = (act_num - 1) * chapters_per_act + 1
-            act_end = min(act_num * chapters_per_act, total_chapters)
+            chapters_per_act = total_chapters // num_acts
 
-            # 只生成指定范围的章节
-            if act_start > chapter_range[1] or act_end < chapter_range[0]:
-                continue
+            for act_num in range(1, num_acts + 1):
+                act_start = (act_num - 1) * chapters_per_act + 1
+                act_end = min(act_num * chapters_per_act, total_chapters)
 
-            actual_start = max(act_start, chapter_range[0])
-            actual_end = min(act_end, chapter_range[1])
+                if act_start > end_ch or act_end < first_missing:
+                    continue
 
-            skeletons = skeleton_generator.generate_chapter_skeletons(
-                act_num, (actual_start, actual_end)
-            )
-            all_skeletons.update(skeletons)
+                actual_start = max(act_start, first_missing)
+                actual_end = min(act_end, end_ch)
 
-        # Stage 3: 场景级细化（按需）
-        self.logger.info("Stage 3: 场景级细化")
-        scene_detailer = SceneLevelDetailer(self.config, self.ai_role_manager)
+                # 批次循环：每次生成 batch_size 章
+                for batch_start in range(actual_start, actual_end + 1, batch_size):
+                    batch_end = min(batch_start + batch_size - 1, actual_end)
 
-        final_outline = {}
-        sorted_chapters = sorted(all_skeletons.keys(), key=lambda x: self._extract_chapter_number(x))
+                    all_exist = all(
+                        f"第{ch}章" in existing_skeletons
+                        for ch in range(batch_start, batch_end + 1)
+                    )
+                    if all_exist:
+                        self.logger.info(f"第 {batch_start}-{batch_end} 章骨架已存在，跳过")
+                        continue
 
-        for chapter_key in sorted_chapters:
-            skeleton = all_skeletons[chapter_key]
-            chapter_num = self._extract_chapter_number(chapter_key)
+                    self.logger.info(f"生成批次: 第{batch_start}-{batch_end}章")
+                    skeletons = skeleton_generator.generate_chapter_skeletons(
+                        act_num, (batch_start, batch_end)
+                    )
+                    existing_skeletons.update(skeletons)
+                    # 更新 generator 中的引用，使后续批次的上下文包含本章批次
+                    skeleton_generator.existing_skeletons = existing_skeletons
+                    self._save_skeletons(existing_skeletons)
+                    self.logger.info(f"第 {batch_start}-{batch_end} 章骨架已保存")
 
-            # 获取前后上下文
-            prev_context = ""
-            next_context = ""
-            if chapter_num > chapter_range[0]:
-                prev_chapter = f"第{chapter_num - 1}章"
-                if prev_chapter in final_outline:
-                    prev_context = final_outline[prev_chapter].get("标题", "")
-
-            detail = scene_detailer.generate_scene_detail(
-                chapter_num, skeleton, prev_context, next_context
-            )
-            final_outline[chapter_key] = detail
-
-        self.logger.info(f"三阶段大纲生成完成，共{len(final_outline)}章")
-        return final_outline
+        self.logger.info(f"两阶段大纲生成完成，共{len(existing_skeletons)}章")
+        return existing_skeletons
 
     def _extract_chapter_number(self, chapter_key: str) -> int:
         """从章节键提取章节号"""
@@ -1075,88 +948,66 @@ class OutlineGenerator:
 
         return "\n\n".join(acts_content)
 
+    def extract_num_acts(self, overall_outline: Dict[str, Any]) -> int:
+        """从整体大纲中提取幕的数量"""
+        outline_data = overall_outline
+        if "幕结构" in overall_outline:
+            outline_data = overall_outline["幕结构"]
+
+        count = 0
+        for key in outline_data:
+            if isinstance(outline_data[key], dict) and key.startswith("第"):
+                count += 1
+        if count > 0:
+            return count
+        # fallback: 检查顶层
+        for key in overall_outline:
+            if isinstance(overall_outline[key], dict) and key.startswith("第"):
+                count += 1
+        return count if count > 0 else 3
+
     def extract_total_chapters(self, overall_outline: Dict[str, Any]) -> int:
         try:
-            total_chapters = 0
-            act_number = 1
+            # 优先读取顶层"总章节数"字段
+            if "总章节数" in overall_outline:
+                total = int(overall_outline["总章节数"])
+                self.logger.info(f"从总章节数字段提取到总章节数量: {total}")
+                return total
 
-            chinese_numbers = [
-                "一",
-                "二",
-                "三",
-                "四",
-                "五",
-                "六",
-                "七",
-                "八",
-                "九",
-                "十",
-                "十一",
-                "十二",
-                "十三",
-                "十四",
-                "十五",
-                "十六",
-                "十七",
-                "十八",
-                "十九",
-                "二十",
-            ]
+            total_chapters = 0
 
             outline_data = overall_outline
-
             if "幕结构" in overall_outline:
                 outline_data = overall_outline["幕结构"]
 
-            while True:
-                act_key_numeric = f"第{act_number}幕"
-                act_content = outline_data.get(act_key_numeric, "")
+            chapter_patterns = [
+                r"第\s*(\d+)\s*-\s*(\d+)\s*章",
+                r"第\s*(\d+)\s*章\s*到\s*第\s*(\d+)\s*章",
+                r"(\d+)\s*-\s*(\d+)\s*章",
+                r"第\s*(\d+)\s*章",
+            ]
 
-                if not act_content and act_number <= len(chinese_numbers):
-                    act_key_chinese = f"第{chinese_numbers[act_number - 1]}幕"
-                    act_content = outline_data.get(act_key_chinese, "")
+            for key, act_content in outline_data.items():
+                if not isinstance(act_content, dict):
+                    continue
+                chapter_range = act_content.get("章节范围", "")
+                search_text = str(chapter_range)
 
-                if act_content:
-                    if isinstance(act_content, dict):
-                        chapter_range = act_content.get("章节范围", "")
-                        search_text = str(chapter_range)
-                    else:
-                        search_text = str(act_content)
-
-                    chapter_patterns = [
-                        r"第\s*(\d+)\s*-\s*(\d+)\s*章",
-                        r"第\s*(\d+)\s*章\s*到\s*第\s*(\d+)\s*章",
-                        r"(\d+)\s*-\s*(\d+)\s*章",
-                        r"第\s*(\d+)\s*章",
-                    ]
-
-                    max_chapter_in_act = 0
-                    for pattern in chapter_patterns:
-                        matches = re.findall(pattern, search_text)
-                        for match in matches:
-                            if len(match) == 2:
-                                end_chapter = int(match[1])
-                                max_chapter_in_act = max(
-                                    max_chapter_in_act, end_chapter
-                                )
-                            else:
-                                chapter_num = int(match[0])
-                                max_chapter_in_act = max(
-                                    max_chapter_in_act, chapter_num
-                                )
-
-                    if max_chapter_in_act > 0:
-                        total_chapters = max(total_chapters, max_chapter_in_act)
-
-                    act_number += 1
-                else:
-                    break
+                for pattern in chapter_patterns:
+                    matches = re.findall(pattern, search_text)
+                    for match in matches:
+                        if len(match) == 2:
+                            end_chapter = int(match[1])
+                            total_chapters = max(total_chapters, end_chapter)
+                        else:
+                            chapter_num = int(match[0])
+                            total_chapters = max(total_chapters, chapter_num)
 
             if total_chapters == 0:
                 self.logger.warning("无法从整体大纲中提取章节数量，使用默认值150")
                 return 150
 
-            self.logger.info(f"从整体大纲中提取到总章节数量: {total_chapters}")
+            self.logger.info(f"从幕结构中提取到总章节数量: {total_chapters}")
             return total_chapters
 
         except Exception as e:
@@ -1252,16 +1103,11 @@ class OutlineGenerator:
         cleaned_lines = []
 
         for line in lines:
-            # 跳过代码块开始和结束标记
-            if line.strip() in ["```yaml", "```", "```yml"]:
+            stripped = line.strip()
+            # 跳过代码块开始和结束标记（```json, ```yaml, ```, etc.）
+            if stripped.startswith("```"):
                 continue
-            # 跳过空行（如果它们在代码块标记附近）
-            elif (
-                line.strip() == "" and cleaned_lines and cleaned_lines[-1].strip() == ""
-            ):
-                continue
-            else:
-                cleaned_lines.append(line)
+            cleaned_lines.append(line)
 
         return "\n".join(cleaned_lines)
 

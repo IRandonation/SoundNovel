@@ -14,28 +14,12 @@ from novel_generator.config.ai_roles import AIRoleConfig, AIRolesConfig
 
 class AIRole(Enum):
     GENERATOR = "generator"
-    REVIEWER = "reviewer"
-    REFINER = "refiner"
 
 
 DEFAULT_ROLE_CONFIGS = {
     AIRole.GENERATOR: {
         "temperature": 0.7,
         "top_p": 0.9,
-        "max_tokens": 8000,
-        "provider": "doubao",
-        "model": "doubao-seed-2-0-lite-260215",
-    },
-    AIRole.REVIEWER: {
-        "temperature": 0.3,
-        "top_p": 0.7,
-        "max_tokens": 4000,
-        "provider": "deepseek",
-        "model": "deepseek-chat",
-    },
-    AIRole.REFINER: {
-        "temperature": 0.5,
-        "top_p": 0.8,
         "max_tokens": 8000,
         "provider": "doubao",
         "model": "doubao-seed-2-0-lite-260215",

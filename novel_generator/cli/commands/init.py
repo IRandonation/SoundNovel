@@ -51,8 +51,8 @@ def run(args: argparse.Namespace) -> int:
             print(
                 "  1. 运行 'soundnovel settings --interactive' 配置 AI 模型和 API Key"
             )
-            print("  2. 填写 01_source/core_setting.yaml - 小说核心设定")
-            print("  3. 填写 01_source/overall_outline.yaml - 整体大纲")
+            print("  2. 填写 user/source/core_setting.yaml - 小说核心设定")
+            print("  3. 填写 user/source/overall_outline.yaml - 整体大纲")
             print("  4. 运行 'soundnovel outline' 生成章节大纲")
             return 0
         else:

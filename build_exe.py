@@ -50,14 +50,14 @@ def copy_project_resources(dist_dir: Path):
 
     # 要复制的目录
     dirs_to_copy = [
-        ("01_source", "01_source"),
-        ("04_prompt", "04_prompt"),
-        ("05_script", "05_script"),
+        ("user/source", "user/source"),
+        ("user/prompts", "user/prompts"),
+        ("user/config", "user/config"),
         ("novel_generator", "novel_generator"),
     ]
 
     # 要创建的空目录
-    dirs_to_create = ["02_outline", "03_draft", "06_log"]
+    dirs_to_create = ["user/output/outline", "user/output/draft", "user/logs"]
 
     # 要复制的单独文件
     files_to_copy = [
@@ -91,16 +91,16 @@ def copy_project_resources(dist_dir: Path):
             print(f"   ✅ 复制文件 {src_name}")
 
     # 处理配置文件
-    config_example = project_root / "05_script" / "config.example.json"
-    config_dst = dist_dir / "05_script" / "config.json"
+    config_example = project_root / "user/config" / "config.example.json"
+    config_dst = dist_dir / "user/config" / "config.json"
     if config_example.exists() and not config_dst.exists():
         shutil.copy(config_example, config_dst)
         print("   📝 创建默认 config.json")
 
     # 处理源文件模板
     for f_name in ["core_setting", "overall_outline"]:
-        example = project_root / "01_source" / f"{f_name}.example.yaml"
-        dst = dist_dir / "01_source" / f"{f_name}.yaml"
+        example = project_root / "user/source" / f"{f_name}.example.yaml"
+        dst = dist_dir / "user/source" / f"{f_name}.yaml"
         if example.exists() and not dst.exists():
             shutil.copy(example, dst)
             print(f"   📝 创建默认 {f_name}.yaml")

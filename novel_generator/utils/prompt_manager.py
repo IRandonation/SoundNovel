@@ -5,7 +5,7 @@ import logging
 
 
 class PromptManager:
-    DEFAULT_PROMPT_DIR = "04_prompt"
+    DEFAULT_PROMPT_DIR = "user/prompts"
 
     def __init__(self, project_root: str = "."):
         self.project_root = Path(project_root).resolve()

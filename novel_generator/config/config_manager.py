@@ -76,9 +76,6 @@ class ConfigManager:
 
         generation_cfg = unified.get("generation", {})
         if generation_cfg:
-            self.session_manager.state.generation_config.batch_size = generation_cfg.get(
-                "batch_size", self.session_manager.state.generation_config.batch_size
-            )
             self.session_manager.state.generation_config.context_chapters = (
                 generation_cfg.get(
                     "context_chapters",
@@ -143,7 +140,6 @@ class ConfigManager:
             "default_word_count",
             config["novel_generation"].get("default_word_count", 1500),
         )
-        config["batch_size"] = generation_cfg.get("batch_size", config.get("batch_size", 15))
 
         return config
 

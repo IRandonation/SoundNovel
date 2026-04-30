@@ -8,7 +8,7 @@ from novel_generator.cli.commands.expand import run as expand
 from novel_generator.cli.commands.status import run as status
 from novel_generator.cli.commands.continue_cmd import run as continue_write
 from novel_generator.cli.commands.settings_cmd import run as settings
-from novel_generator.cli.commands.review_cmd import run as review
-from novel_generator.cli.commands.agent import run as agent
+from novel_generator.cli.commands.touch import run as touch
+from novel_generator.cli.commands.regenerate import run as regenerate
 
-__all__ = ['init', 'outline', 'expand', 'status', 'continue_write', 'settings', 'review', 'agent']
+__all__ = ['init', 'outline', 'expand', 'status', 'continue_write', 'settings', 'touch', 'regenerate']

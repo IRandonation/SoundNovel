@@ -20,7 +20,6 @@ class TestSessionManager:
             "created_at": "2024-01-01T00:00:00",
             "updated_at": "2024-01-01T00:00:00",
             "api_config": {
-                "provider": "deepseek",
                 "deepseek_api_key": "test-key-123",
             },
             "generation_state": {
@@ -28,14 +27,13 @@ class TestSessionManager:
                 "last_draft_chapter": 50,
             },
             "generation_config": {
-                "batch_size": 10,
                 "context_chapters": 5,
             },
             "ai_roles": {},
             "sessions": [],
         }
         
-        session_file = tmp_path / "05_script" / "session.json"
+        session_file = tmp_path / "user/config" / "session.json"
         session_file.parent.mkdir(parents=True, exist_ok=True)
         with open(session_file, "w", encoding="utf-8") as f:
             json.dump(session_data, f, ensure_ascii=False, indent=2)
@@ -50,7 +48,7 @@ class TestSessionManager:
 
     def test_session_save(self, tmp_path):
         """Test saving session to file"""
-        session_file = tmp_path / "05_script" / "session.json"
+        session_file = tmp_path / "user/config" / "session.json"
         session_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = SessionManager(str(tmp_path))
@@ -72,7 +70,7 @@ class TestSessionManager:
 
     def test_session_roundtrip(self, tmp_path):
         """Test load -> save -> load produces identical state"""
-        session_file = tmp_path / "05_script" / "session.json"
+        session_file = tmp_path / "user/config" / "session.json"
         session_file.parent.mkdir(parents=True, exist_ok=True)
         
         original_data = {
@@ -80,7 +78,6 @@ class TestSessionManager:
             "created_at": "2024-01-01T00:00:00",
             "updated_at": "2024-01-01T00:00:00",
             "api_config": {
-                "provider": "doubao",
                 "doubao_api_key": "roundtrip-doubao",
                 "deepseek_api_key": "roundtrip-deepseek",
             },
@@ -90,7 +87,6 @@ class TestSessionManager:
                 "last_draft_chapter": 25,
             },
             "generation_config": {
-                "batch_size": 12,
                 "context_chapters": 8,
                 "default_word_count": 1800,
             },
@@ -123,20 +119,19 @@ class TestSessionManager:
 
     def test_get_api_config(self, tmp_path):
         """Test get_api_config method"""
-        session_file = tmp_path / "05_script" / "session.json"
+        session_file = tmp_path / "user/config" / "session.json"
         session_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = SessionManager(str(tmp_path))
         manager.state.api_config.doubao_api_key = "api-key-test"
         
         api_config = manager.get_api_config()
-        
+
         assert api_config["doubao_api_key"] == "api-key-test"
-        assert "default_model" in api_config
 
     def test_set_api_config(self, tmp_path):
         """Test set_api_config method"""
-        session_file = tmp_path / "05_script" / "session.json"
+        session_file = tmp_path / "user/config" / "session.json"
         session_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = SessionManager(str(tmp_path))
@@ -153,7 +148,7 @@ class TestSessionManager:
 
     def test_update_progress(self, tmp_path):
         """Test update_progress method"""
-        session_file = tmp_path / "05_script" / "session.json"
+        session_file = tmp_path / "user/config" / "session.json"
         session_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = SessionManager(str(tmp_path))
@@ -169,7 +164,7 @@ class TestSessionManager:
 
     def test_get_last_chapter(self, tmp_path):
         """Test get_last_chapter method"""
-        session_file = tmp_path / "05_script" / "session.json"
+        session_file = tmp_path / "user/config" / "session.json"
         session_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = SessionManager(str(tmp_path))
@@ -184,7 +179,7 @@ class TestSessionManager:
 
     def test_set_total_chapters(self, tmp_path):
         """Test set_total_chapters method"""
-        session_file = tmp_path / "05_script" / "session.json"
+        session_file = tmp_path / "user/config" / "session.json"
         session_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = SessionManager(str(tmp_path))
@@ -196,7 +191,7 @@ class TestSessionManager:
 
     def test_get_status_summary(self, tmp_path):
         """Test get_status_summary method"""
-        session_file = tmp_path / "05_script" / "session.json"
+        session_file = tmp_path / "user/config" / "session.json"
         session_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = SessionManager(str(tmp_path))

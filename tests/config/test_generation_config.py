@@ -30,7 +30,7 @@ class TestGenerationConfigManager:
             }
         }
         
-        config_file = tmp_path / "05_script" / "generation_config.json"
+        config_file = tmp_path / "user/config" / "generation_config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config_data, f, ensure_ascii=False, indent=2)
@@ -44,7 +44,7 @@ class TestGenerationConfigManager:
 
     def test_config_save(self, tmp_path):
         """Test saving config to file"""
-        config_file = tmp_path / "05_script" / "generation_config.json"
+        config_file = tmp_path / "user/config" / "generation_config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = GenerationConfigManager(str(tmp_path))
@@ -73,7 +73,7 @@ class TestGenerationConfigManager:
 
     def test_config_roundtrip(self, tmp_path):
         """Test load -> save -> load produces identical state"""
-        config_file = tmp_path / "05_script" / "generation_config.json"
+        config_file = tmp_path / "user/config" / "generation_config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         
         original_config = {
@@ -83,7 +83,6 @@ class TestGenerationConfigManager:
                 "pass_score_threshold": 75,
                 "context_chapters": 12,
                 "default_word_count": 2000,
-                "batch_size": 20,
             },
             "roles": {
                 "generator": {
@@ -116,7 +115,7 @@ class TestGenerationConfigManager:
 
     def test_get_generation_config(self, tmp_path):
         """Test get_generation_config method"""
-        config_file = tmp_path / "05_script" / "generation_config.json"
+        config_file = tmp_path / "user/config" / "generation_config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = GenerationConfigManager(str(tmp_path))
@@ -127,7 +126,7 @@ class TestGenerationConfigManager:
 
     def test_get_role_config(self, tmp_path):
         """Test get_role_config method"""
-        config_file = tmp_path / "05_script" / "generation_config.json"
+        config_file = tmp_path / "user/config" / "generation_config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = GenerationConfigManager(str(tmp_path))
@@ -138,7 +137,7 @@ class TestGenerationConfigManager:
 
     def test_set_role_config(self, tmp_path):
         """Test set_role_config method"""
-        config_file = tmp_path / "05_script" / "generation_config.json"
+        config_file = tmp_path / "user/config" / "generation_config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = GenerationConfigManager(str(tmp_path))
@@ -154,7 +153,7 @@ class TestGenerationConfigManager:
 
     def test_set_generation_config(self, tmp_path):
         """Test set_generation_config method"""
-        config_file = tmp_path / "05_script" / "generation_config.json"
+        config_file = tmp_path / "user/config" / "generation_config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = GenerationConfigManager(str(tmp_path))
@@ -170,7 +169,7 @@ class TestGenerationConfigManager:
 
     def test_reset_to_default(self, tmp_path):
         """Test reset_to_default method"""
-        config_file = tmp_path / "05_script" / "generation_config.json"
+        config_file = tmp_path / "user/config" / "generation_config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         
         manager = GenerationConfigManager(str(tmp_path))

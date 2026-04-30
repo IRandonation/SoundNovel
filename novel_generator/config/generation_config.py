@@ -21,7 +21,10 @@ DEFAULT_CONFIG = {
         "context_before_full": 10,
         "context_after_full": 5,
         "default_word_count": 1500,
-        "batch_size": 15,
+        "outline_window": 30,
+        "draft_window": 10,
+        "skeleton_batch_size": 10,
+        "skeleton_context_window": 15,
     },
     "roles": {
         "generator": {
@@ -34,28 +37,6 @@ DEFAULT_CONFIG = {
             "max_tokens": 8000,
             "enabled": True,
             "system_prompt": "你是一个专业的网络小说作家，擅长根据大纲创作引人入胜的章节内容。",
-        },
-        "reviewer": {
-            "name": "评审者",
-            "description": "负责质量检查、一致性检查等评审任务",
-            "provider": "deepseek",
-            "model": "deepseek-chat",
-            "temperature": 0.3,
-            "top_p": 0.7,
-            "max_tokens": 4000,
-            "enabled": True,
-            "system_prompt": "你是一个专业的文学编辑，负责评审小说章节质量。",
-        },
-        "refiner": {
-            "name": "润色者",
-            "description": "负责内容润色、修复问题等优化任务",
-            "provider": "doubao",
-            "model": "doubao-seed-2-0-lite-260215",
-            "temperature": 0.5,
-            "top_p": 0.8,
-            "max_tokens": 8000,
-            "enabled": True,
-            "system_prompt": "你是一个专业的文字润色专家。",
         },
     },
     "providers": {
@@ -88,7 +69,7 @@ DEFAULT_CONFIG = {
 
 class GenerationConfigManager:
     CONFIG_FILE = "generation_config.json"
-    CONFIG_DIR = "05_script"
+    CONFIG_DIR = "user/config"
 
     def __init__(self, project_root: str = "."):
         self.project_root = Path(project_root).resolve()

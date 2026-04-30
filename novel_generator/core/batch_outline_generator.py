@@ -20,7 +20,7 @@ class BatchOutlineGenerator:
         self.incremental_save = True
     
     def generate_batch_outline(self, core_setting, overall_outline,
-                              total_chapters=None, batch_size=15, 
+                              total_chapters=None,
                               start_chapter_idx=None, end_chapter_idx=None,
                               progress_callback=None,
                               output_path=None,
@@ -38,12 +38,12 @@ class BatchOutlineGenerator:
         self.incremental_save = incremental_save
         self.output_path = output_path
         
-        print(f"\n📝 开始批量生成章节大纲，范围: 第{actual_start}-{actual_end}章，每批{batch_size}章...")
+        print(f"\n📝 开始批量生成章节大纲，范围: 第{actual_start}-{actual_end}章，每批10章...")
         if progress_callback:
             progress_callback(0, actual_end - actual_start + 1, f"准备开始生成第{actual_start}-{actual_end}章...")
 
         complete_outline = {}
-        
+
         if output_path and Path(output_path).exists():
             try:
                 with open(output_path, 'r', encoding='utf-8') as f:
@@ -53,10 +53,13 @@ class BatchOutlineGenerator:
                         print(f"📂 加载已有大纲: {len(complete_outline)} 章")
             except:
                 pass
-        
+
         current_start = actual_start
         total_to_gen = actual_end - actual_start + 1
         processed_count = 0
+
+        # 每批10章
+        batch_size = 10
 
         while current_start <= actual_end:
             current_end = min(current_start + batch_size - 1, actual_end)

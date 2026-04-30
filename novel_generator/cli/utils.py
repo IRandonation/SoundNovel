@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 
-def setup_cli_logging(log_file: str = "06_log/cli.log") -> logging.Logger:
+def setup_cli_logging(log_file: str = "user/logs/cli.log") -> logging.Logger:
     """
     为CLI命令设置日志
     
@@ -67,19 +67,31 @@ def print_success(message: str) -> None:
     print(f"✅ {message}")
 
 
+def _safe_print(text: str, **kwargs) -> None:
+    """安全打印，处理 Windows GBK 编码问题"""
+    try:
+        print(text, **kwargs)
+    except UnicodeEncodeError:
+        # 移除无法编码的字符后重试
+        import sys as _sys
+        encoding = _sys.stdout.encoding or "utf-8"
+        safe = text.encode(encoding, errors="replace").decode(encoding)
+        print(safe, **kwargs)
+
+
 def print_error(message: str) -> None:
     """打印错误消息"""
-    print(f"❌ {message}", file=sys.stderr)
+    _safe_print(f"[ERROR] {message}", file=sys.stderr)
 
 
 def print_warning(message: str) -> None:
     """打印警告消息"""
-    print(f"⚠️  {message}")
+    _safe_print(f"[WARN] {message}")
 
 
 def print_info(message: str) -> None:
     """打印信息消息"""
-    print(f"ℹ️  {message}")
+    _safe_print(f"[INFO] {message}")
 
 
 def confirm_action(prompt: str, default: bool = False) -> bool:

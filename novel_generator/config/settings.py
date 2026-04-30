@@ -23,7 +23,6 @@ class APIConfig:
             "major_chapters_model": "doubao-seed-2-0-lite-260215",
             "sub_chapters_model": "doubao-seed-2-0-lite-260215",
             "expansion_model": "doubao-seed-2-0-lite-260215",
-            "default_model": "doubao-seed-2-0-lite-260215",
         }
     )
 
@@ -35,7 +34,6 @@ class APIConfig:
             "major_chapters_model": "doubao-seed-2-0-lite-260215",
             "sub_chapters_model": "doubao-seed-2-0-lite-260215",
             "expansion_model": "doubao-seed-2-0-lite-260215",
-            "default_model": "doubao-seed-2-0-lite-260215",
         }
     )
 
@@ -47,11 +45,9 @@ class APIConfig:
             "major_chapters_model": "deepseek-chat",
             "sub_chapters_model": "deepseek-chat",
             "expansion_model": "deepseek-chat",
-            "default_model": "deepseek-chat",
         }
     )
 
-    default_model: str = "doubao"
     available_models: List[str] = field(default_factory=lambda: ["doubao", "deepseek"])
 
     max_tokens: int = 8000
@@ -67,7 +63,7 @@ class SystemConfig:
     """系统配置类"""
 
     logging_level: str = "INFO"
-    log_file: str = "06_log/novel_generator.log"
+    log_file: str = "user/logs/novel_generator.log"
     backup_enabled: bool = True
     backup_history: int = 10  # 保留最近10个备份
 
@@ -77,13 +73,13 @@ class PathConfig:
     """路径配置类"""
 
     project_root: str = "."
-    core_setting_file: str = "01_source/core_setting.yaml"
-    outline_dir: str = "02_outline/"
-    draft_dir: str = "03_draft/"
-    prompt_dir: str = "04_prompt/"
-    log_dir: str = "06_log/"
-    api_log_dir: str = "06_log/ai_api_logs/"
-    system_log_dir: str = "06_log/system_logs/"
+    core_setting_file: str = "user/source/core_setting.yaml"
+    outline_dir: str = "user/output/outline/"
+    draft_dir: str = "user/output/draft/"
+    prompt_dir: str = "user/prompts/"
+    log_dir: str = "user/logs/"
+    api_log_dir: str = "user/logs/ai_api_logs/"
+    system_log_dir: str = "user/logs/system_logs/"
 
 
 @dataclass
@@ -92,13 +88,14 @@ class GenerationConfig:
 
     stage1_use_long_model: bool = True
     stage2_use_long_model: bool = True
-    stage3_use_regular_model: bool = True
     stage4_use_regular_model: bool = True
     stage5_use_regular_model: bool = True
     context_chapters: int = 10
     default_word_count: int = 1500
     copyright_bypass: bool = True
     world_style: str = ""
+    outline_window: int = 30
+    draft_window: int = 10
 
 
 class Settings:
@@ -135,12 +132,6 @@ class Settings:
             self.api_config.deepseek_api_base_url = config_dict["deepseek_api_base_url"]
         if "deepseek_models" in config_dict:
             self.api_config.deepseek_models.update(config_dict["deepseek_models"])
-
-        # 加载多模型配置
-        if "default_model" in config_dict:
-            self.api_config.default_model = config_dict["default_model"]
-        if "available_models" in config_dict:
-            self.api_config.available_models = config_dict["available_models"]
 
         # 加载通用配置
         if "max_tokens" in config_dict:
@@ -191,10 +182,6 @@ class Settings:
                 self.generation_config.stage2_use_long_model = gen_config[
                     "stage2_use_long_model"
                 ]
-            if "stage3_use_regular_model" in gen_config:
-                self.generation_config.stage3_use_regular_model = gen_config[
-                    "stage3_use_regular_model"
-                ]
             if "stage4_use_regular_model" in gen_config:
                 self.generation_config.stage4_use_regular_model = gen_config[
                     "stage4_use_regular_model"
@@ -213,6 +200,10 @@ class Settings:
                 self.generation_config.copyright_bypass = gen_config["copyright_bypass"]
             if "world_style" in gen_config:
                 self.generation_config.world_style = gen_config["world_style"]
+            if "outline_window" in gen_config:
+                self.generation_config.outline_window = gen_config["outline_window"]
+            if "draft_window" in gen_config:
+                self.generation_config.draft_window = gen_config["draft_window"]
 
         if "ai_roles" in config_dict:
             self.ai_roles_config = AIRolesConfig.from_dict(config_dict["ai_roles"])
@@ -256,7 +247,6 @@ class Settings:
             "deepseek_api_key": self.api_config.deepseek_api_key,
             "deepseek_api_base_url": self.api_config.deepseek_api_base_url,
             "deepseek_models": self.api_config.deepseek_models,
-            "default_model": self.api_config.default_model,
             "available_models": self.api_config.available_models,
             "max_tokens": self.api_config.max_tokens,
             "temperature": self.api_config.temperature,
@@ -282,13 +272,14 @@ class Settings:
             "novel_generation": {
                 "stage1_use_long_model": self.generation_config.stage1_use_long_model,
                 "stage2_use_long_model": self.generation_config.stage2_use_long_model,
-                "stage3_use_regular_model": self.generation_config.stage3_use_regular_model,
                 "stage4_use_regular_model": self.generation_config.stage4_use_regular_model,
                 "stage5_use_regular_model": self.generation_config.stage5_use_regular_model,
                 "context_chapters": self.generation_config.context_chapters,
                 "default_word_count": self.generation_config.default_word_count,
                 "copyright_bypass": self.generation_config.copyright_bypass,
                 "world_style": self.generation_config.world_style,
+                "outline_window": self.generation_config.outline_window,
+                "draft_window": self.generation_config.draft_window,
             },
             "ai_roles": self.ai_roles_config.to_dict(),
         }
@@ -309,34 +300,33 @@ class Settings:
         return True
 
     def get_api_model(self, stage: str) -> str:
+        """获取指定阶段的模型名称，优先使用 role_config 配置"""
         stage_mapping = {
             "stage1": "logic_analysis_model",
             "stage2": "major_chapters_model",
-            "stage3": "sub_chapters_model",
             "stage4": "expansion_model",
             "stage5": "expansion_model",
         }
 
-        model_key = stage_mapping.get(stage, "default_model")
+        model_key = stage_mapping.get(stage, "expansion_model")
 
+        # 优先使用 doubao 配置
         if self.api_config.doubao_api_key:
             return self.api_config.doubao_models.get(
                 model_key,
-                self.api_config.doubao_models.get(
-                    "default_model", "doubao-seed-2-0-lite-260215"
-                ),
+                self.api_config.doubao_models.get("expansion_model", ""),
             )
+        # 否则使用 deepseek 配置
         elif self.api_config.deepseek_api_key:
             return self.api_config.deepseek_models.get(
                 model_key,
-                self.api_config.deepseek_models.get("default_model", "deepseek-chat"),
+                self.api_config.deepseek_models.get("expansion_model", ""),
             )
+        # 最后使用通用配置
         else:
             return self.api_config.models.get(
                 model_key,
-                self.api_config.models.get(
-                    "default_model", "doubao-seed-2-0-lite-260215"
-                ),
+                self.api_config.models.get("expansion_model", ""),
             )
 
     def get_context_chapters(self) -> int:
@@ -373,7 +363,6 @@ def create_default_config() -> Dict[str, Any]:
             "major_chapters_model": "doubao-seed-2-0-lite-260215",
             "sub_chapters_model": "doubao-seed-2-0-lite-260215",
             "expansion_model": "doubao-seed-2-0-lite-260215",
-            "default_model": "doubao-seed-2-0-lite-260215",
         },
         "doubao_api_key": "",
         "doubao_api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
@@ -382,7 +371,6 @@ def create_default_config() -> Dict[str, Any]:
             "major_chapters_model": "doubao-seed-2-0-lite-260215",
             "sub_chapters_model": "doubao-seed-2-0-lite-260215",
             "expansion_model": "doubao-seed-2-0-lite-260215",
-            "default_model": "doubao-seed-2-0-lite-260215",
         },
         "deepseek_api_key": "",
         "deepseek_api_base_url": "https://api.deepseek.com",
@@ -391,28 +379,25 @@ def create_default_config() -> Dict[str, Any]:
             "major_chapters_model": "deepseek-chat",
             "sub_chapters_model": "deepseek-chat",
             "expansion_model": "deepseek-chat",
-            "default_model": "deepseek-chat",
         },
-        "default_model": "doubao",
         "available_models": ["doubao", "deepseek"],
         "max_tokens": 4000,
         "temperature": 0.7,
         "top_p": 0.7,
         "system": {
             "api": {"max_retries": 5, "retry_delay": 2, "timeout": 60},
-            "logging": {"level": "INFO", "file": "06_log/novel_generator.log"},
+            "logging": {"level": "INFO", "file": "user/logs/novel_generator.log"},
         },
         "paths": {
-            "core_setting": "01_source/core_setting.yaml",
-            "outline_dir": "02_outline/",
-            "draft_dir": "03_draft/",
-            "prompt_dir": "04_prompt/",
-            "log_dir": "06_log/",
+            "core_setting": "user/source/core_setting.yaml",
+            "outline_dir": "user/output/outline/",
+            "draft_dir": "user/output/draft/",
+            "prompt_dir": "user/prompts/",
+            "log_dir": "user/logs/",
         },
         "novel_generation": {
             "stage1_use_long_model": True,
             "stage2_use_long_model": True,
-            "stage3_use_regular_model": True,
             "stage4_use_regular_model": True,
             "stage5_use_regular_model": True,
             "context_chapters": 5,

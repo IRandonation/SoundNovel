@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 class APIConfigState:
     """API配置状态 - 每个服务商独立存储API密钥"""
 
-    provider: str = "doubao"  # 当前使用的服务商
+    # 当前选用的服务商（由 role_config.provider 决定，此处仅作参考）
+    provider: str = ""
 
     # 豆包/火山引擎配置 (两者共用同一套API)
     doubao_api_key: str = ""
@@ -32,7 +33,6 @@ class APIConfigState:
             "major_chapters_model": "doubao-seed-2-0-lite-260215",
             "sub_chapters_model": "doubao-seed-2-0-lite-260215",
             "expansion_model": "doubao-seed-2-0-lite-260215",
-            "default_model": "doubao-seed-2-0-lite-260215",
         }
     )
 
@@ -45,7 +45,6 @@ class APIConfigState:
             "major_chapters_model": "deepseek-chat",
             "sub_chapters_model": "deepseek-chat",
             "expansion_model": "deepseek-chat",
-            "default_model": "deepseek-chat",
         }
     )
 
@@ -55,7 +54,7 @@ class APIConfigState:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "APIConfigState":
         return cls(
-            provider=data.get("provider", "doubao"),
+            provider=data.get("provider", ""),
             doubao_api_key=data.get("doubao_api_key", ""),
             doubao_api_base_url=data.get(
                 "doubao_api_base_url", "https://ark.cn-beijing.volces.com/api/v3"
@@ -93,9 +92,10 @@ class GenerationState:
 
 @dataclass
 class GenerationConfig:
-    batch_size: int = 15
     context_chapters: int = 10
     default_word_count: int = 1500
+    outline_window: int = 30
+    draft_window: int = 10
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -103,9 +103,10 @@ class GenerationConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GenerationConfig":
         return cls(
-            batch_size=data.get("batch_size", 15),
             context_chapters=data.get("context_chapters", 10),
             default_word_count=data.get("default_word_count", 1500),
+            outline_window=data.get("outline_window", 30),
+            draft_window=data.get("draft_window", 10),
         )
 
 
@@ -145,6 +146,7 @@ class SessionState:
     generation_config: GenerationConfig = field(default_factory=GenerationConfig)
     ai_roles: AIRolesConfig = field(default_factory=AIRolesConfig)
     sessions: List[SessionRecord] = field(default_factory=list)
+    chapter_states: Dict[str, str] = field(default_factory=dict)  # {"1": "clean", "2": "dirty", ...}
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -156,6 +158,7 @@ class SessionState:
             "generation_config": self.generation_config.to_dict(),
             "ai_roles": self.ai_roles.to_dict(),
             "sessions": [s.to_dict() for s in self.sessions],
+            "chapter_states": self.chapter_states,
         }
 
     @classmethod
@@ -173,6 +176,7 @@ class SessionState:
             ),
             ai_roles=AIRolesConfig.from_dict(data.get("ai_roles", {})),
             sessions=[SessionRecord.from_dict(s) for s in data.get("sessions", [])],
+            chapter_states=data.get("chapter_states", {}),
         )
 
 
@@ -188,7 +192,7 @@ class SessionManager:
     """
 
     SESSION_FILE = "session.json"
-    CONFIG_DIR = "05_script"
+    CONFIG_DIR = "user/config"
 
     def __init__(self, project_root: str = "."):
         """
@@ -266,11 +270,10 @@ class SessionManager:
         api_state = self.state.api_config
         gen_config = self.state.generation_config
         config = {
-            "default_model": api_state.provider,
+            "provider": api_state.provider,
             "max_tokens": 8000,
             "temperature": 0.7,
             "top_p": 0.7,
-            "batch_size": gen_config.batch_size,
             "context_chapters": gen_config.context_chapters,
             "default_word_count": gen_config.default_word_count,
             "system": {"api": {"max_retries": 5, "retry_delay": 2, "timeout": 60}},
@@ -325,11 +328,11 @@ class SessionManager:
     def _get_default_paths(self) -> Dict[str, str]:
         """获取默认路径配置"""
         return {
-            "core_setting": "01_source/core_setting.yaml",
-            "outline_dir": "02_outline/",
-            "draft_dir": "03_draft/",
-            "prompt_dir": "04_prompt/",
-            "log_dir": "06_log/",
+            "core_setting": "user/source/core_setting.yaml",
+            "outline_dir": "user/output/outline/",
+            "draft_dir": "user/output/draft/",
+            "prompt_dir": "user/prompts/",
+            "log_dir": "user/logs/",
         }
 
     def set_api_config(
@@ -339,8 +342,6 @@ class SessionManager:
         api_base_url: Optional[str] = None,
         models: Optional[Dict[str, str]] = None,
     ) -> bool:
-        self.state.api_config.provider = provider
-
         if provider == "doubao":
             self.state.api_config.doubao_api_key = api_key
             if api_base_url:
@@ -416,12 +417,12 @@ class SessionManager:
         self.state.generation_state.total_chapters = total
         return self.save()
 
-    def auto_detect_last_chapter(self, directory: str = "03_draft") -> int:
+    def auto_detect_last_chapter(self, directory: str = "user/output/draft") -> int:
         """
         自动检测目录中最后生成的章节号
 
         Args:
-            directory: 目录路径 (02_outline / 03_draft)
+            directory: 目录路径 (user/output/outline / user/output/draft)
 
         Returns:
             int: 检测到的最后章节号
@@ -451,12 +452,12 @@ class SessionManager:
             bool: 是否同步成功
         """
         # 检测草稿目录
-        last_draft = self.auto_detect_last_chapter("03_draft")
+        last_draft = self.auto_detect_last_chapter("user/output/draft")
         if last_draft > 0:
             self.state.generation_state.last_draft_chapter = last_draft
 
         # 检测大纲目录
-        last_outline = self.auto_detect_last_chapter("02_outline")
+        last_outline = self.auto_detect_last_chapter("user/output/outline")
         if last_outline > 0:
             self.state.generation_state.last_outline_chapter = last_outline
 
@@ -544,8 +545,54 @@ class SessionManager:
             "total_chapters": total,
             "progress_percent": (last_chapter / total * 100) if total > 0 else 0,
             "outline_file": outline_file,
-            "provider": self.state.api_config.provider,
             "can_continue": last_chapter > 0 and (total == 0 or last_chapter < total),
+            "ai_roles": self.state.ai_roles.to_dict(),
+        }
+
+    # ========== 章节状态管理 ==========
+
+    def get_chapter_state(self, chapter_num: int) -> str:
+        """获取章节状态，未记录则返回 clean"""
+        return self.state.chapter_states.get(str(chapter_num), "clean")
+
+    def set_chapter_state(self, chapter_num: int, state: str) -> bool:
+        """设置章节状态 (clean/dirty/cosmetic)"""
+        self.state.chapter_states[str(chapter_num)] = state
+        return self.save()
+
+    def get_first_dirty_chapter(self) -> int:
+        """获取第一个 dirty 章节号，没有则返回 0"""
+        dirty = [
+            int(k) for k, v in self.state.chapter_states.items() if v == "dirty"
+        ]
+        return min(dirty) if dirty else 0
+
+    def mark_dirty_cascade(self, start_chapter: int, window: int) -> int:
+        """
+        从 start_chapter+1 开始，将 window 范围内的章节标记为 dirty。
+        返回标记数量。
+        """
+        count = 0
+        for ch in range(start_chapter + 1, start_chapter + window + 1):
+            self.state.chapter_states[str(ch)] = "dirty"
+            count += 1
+        self.save()
+        return count
+
+    def get_chapter_states_summary(self) -> Dict[str, Any]:
+        """获取章节状态摘要"""
+        states = self.state.chapter_states
+        total_tracked = len(states)
+        clean_count = sum(1 for v in states.values() if v == "clean")
+        dirty_count = sum(1 for v in states.values() if v == "dirty")
+        cosmetic_count = sum(1 for v in states.values() if v == "cosmetic")
+
+        return {
+            "total_tracked": total_tracked,
+            "clean": clean_count,
+            "dirty": dirty_count,
+            "cosmetic": cosmetic_count,
+            "states": dict(states),
         }
 
     def get_status_summary(self) -> Dict[str, Any]:
@@ -559,7 +606,6 @@ class SessionManager:
             "project_name": self.state.project_name,
             "created_at": self.state.created_at,
             "updated_at": self.state.updated_at,
-            "api_provider": self.state.api_config.provider,
             "api_configured": bool(
                 self.state.api_config.doubao_api_key
                 or self.state.api_config.deepseek_api_key

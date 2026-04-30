@@ -112,12 +112,13 @@ class DoubaoClient(BaseModelClient):
             raise Exception(f"豆包聊天补全失败: {e}")
 
     def test_connection(self) -> bool:
+        """测试连接"""
         try:
             test_prompt = "请回复'连接成功'以确认API正常工作。"
 
-            model = self.config.get("doubao_models", {}).get(
-                "default_model", "doubao-seed-2-0-lite-260215"
-            )
+            model = self.config.get("doubao_models", {}).get("expansion_model")
+            if not model:
+                raise ValueError("doubao_models.expansion_model 未配置")
 
             response = self.chat_completion(
                 model,
@@ -200,9 +201,9 @@ class DeepSeekClient(BaseModelClient):
         try:
             test_prompt = "请回复'连接成功'以确认API正常工作。"
 
-            model = self.config.get("deepseek_models", {}).get(
-                "default_model", "deepseek-chat"
-            )
+            model = self.config.get("deepseek_models", {}).get("expansion_model")
+            if not model:
+                raise ValueError("deepseek_models.expansion_model 未配置")
 
             response = self.chat_completion(
                 model, [{"role": "user", "content": test_prompt}]
@@ -224,22 +225,18 @@ class MultiModelClient:
             "deepseek": DeepSeekClient(config) if OPENAI_AVAILABLE else None,
         }
 
-        self.default_model = config.get("default_model", "doubao")
-
         self.model_mapping = {
             "doubao": {
                 "logic_analysis_model": "doubao-seed-2-0-lite-260215",
                 "major_chapters_model": "doubao-seed-2-0-lite-260215",
                 "sub_chapters_model": "doubao-seed-2-0-lite-260215",
                 "expansion_model": "doubao-seed-2-0-lite-260215",
-                "default_model": "doubao-seed-2-0-lite-260215",
             },
             "deepseek": {
                 "logic_analysis_model": "deepseek-chat",
                 "major_chapters_model": "deepseek-chat",
                 "sub_chapters_model": "deepseek-chat",
                 "expansion_model": "deepseek-chat",
-                "default_model": "deepseek-chat",
             },
         }
 
@@ -249,18 +246,22 @@ class MultiModelClient:
         if "deepseek_models" in config:
             self.model_mapping["deepseek"].update(config["deepseek_models"])
 
-    def get_client(self, model_type: str = None) -> BaseModelClient:
+    def get_client(self, model_type: str) -> BaseModelClient:
         """
         获取指定类型的客户端
 
         Args:
-            model_type: 模型类型 ('doubao', 'deepseek')
+            model_type: 模型类型 ('doubao', 'deepseek')，必须显式指定
 
         Returns:
             BaseModelClient: 模型客户端
+
+        Raises:
+            ValueError: 如果 model_type 为空或未设置
+            Exception: 如果不支持的模型类型或客户端未初始化
         """
         if not model_type:
-            model_type = self.default_model
+            raise ValueError("model_type 不能为空，请通过 role_config.provider 或显式参数指定")
 
         if model_type not in self.clients:
             raise Exception(f"不支持的模型类型: {model_type}")
@@ -273,7 +274,7 @@ class MultiModelClient:
 
     def chat_completion(
         self,
-        model_type: str = None,
+        model_type: str,
         model: str = None,
         messages: List[Dict[str, str]] = None,
         **kwargs,
@@ -282,7 +283,7 @@ class MultiModelClient:
         聊天补全
 
         Args:
-            model_type: 模型类型
+            model_type: 模型类型，必须显式指定
             model: 具体模型名称
             messages: 消息列表
             **kwargs: 其他参数
@@ -293,12 +294,15 @@ class MultiModelClient:
         if not messages:
             raise Exception("消息列表不能为空")
 
+        if not model_type:
+            raise ValueError("model_type 不能为空，请通过 role_config.provider 或显式参数指定")
+
         client = self.get_client(model_type)
 
         if not model:
             # 根据阶段获取模型
             stage = kwargs.get("stage", "default")
-            model = self.get_model_for_stage(model_type or self.default_model, stage)
+            model = self.get_model_for_stage(model_type, stage)
 
         return client.chat_completion(model, messages, **kwargs)
 
@@ -319,7 +323,10 @@ class MultiModelClient:
         if not messages:
             raise Exception("消息列表不能为空")
 
-        provider = role_config.get("provider", self.default_model)
+        provider = role_config.get("provider", "")
+        if not provider:
+            raise ValueError("role_config.provider 未设置，请先配置 AI 角色")
+
         model = role_config.get("model", "")
 
         client = self.get_client(provider)
@@ -353,23 +360,23 @@ class MultiModelClient:
             "stage3": "sub_chapters_model",
             "stage4": "expansion_model",
             "stage5": "expansion_model",
-            "default": "default_model",
+            "default": "expansion_model",
         }
 
-        model_key = stage_mapping.get(stage, "default_model")
+        model_key = stage_mapping.get(stage, "expansion_model")
         return self.model_mapping[model_type].get(
-            model_key, self.model_mapping[model_type]["default_model"]
+            model_key, self.model_mapping[model_type].get("expansion_model", "")
         )
 
     def switch_model(self, model_type: str) -> bool:
         """
-        切换默认模型
+        验证模型是否可用（不再维护 default_model）
 
         Args:
             model_type: 模型类型
 
         Returns:
-            bool: 切换是否成功
+            bool: 模型是否可用
         """
         if model_type not in self.clients:
             self.logger.error(f"不支持的模型类型: {model_type}")
@@ -379,30 +386,32 @@ class MultiModelClient:
             self.logger.error(f"模型客户端 {model_type} 未正确初始化")
             return False
 
-        self.default_model = model_type
-        self.logger.info(f"已切换到模型: {model_type}")
+        self.logger.info(f"模型可用: {model_type}")
         return True
 
-    def test_connection(self, model_type: str = None) -> bool:
+    def test_connection(self, model_type: str) -> bool:
         """
         测试指定模型的连接
 
         Args:
-            model_type: 模型类型
+            model_type: 模型类型，必须显式指定
 
         Returns:
             bool: 连接是否成功
         """
+        if not model_type:
+            raise ValueError("model_type 不能为空，请显式指定要测试的模型类型")
+
         try:
             client = self.get_client(model_type)
             return client.test_connection()
         except Exception as e:
-            self.logger.error(f"测试 {model_type or self.default_model} 连接失败: {e}")
+            self.logger.error(f"测试 {model_type} 连接失败: {e}")
             return False
 
     def test_all_connections(self) -> Dict[str, bool]:
         """
-        测试所有模型的连接
+        测试所有可用的模型连接
 
         Returns:
             Dict[str, bool]: 各模型连接状态
@@ -432,91 +441,9 @@ class MultiModelClient:
 
     def get_current_model(self) -> str:
         """
-        获取当前使用的模型
-
-        Returns:
-            str: 当前模型类型
+        已废弃：不再维护默认模型
+        请使用 role_config.provider 获取当前使用的模型
         """
-        return self.default_model
-
-    def generate_outline(self, prompt: str, model_type: str = None) -> str:
-        """生成大纲"""
-        return self.chat_completion(
-            model_type=model_type,
-            stage="stage2",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是一个专业的小说大纲策划师，擅长创作引人入胜的故事情节。",
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
-
-    def expand_chapter(self, prompt: str, model_type: str = None) -> str:
-        """扩写章节"""
-        return self.chat_completion(
-            model_type=model_type,
-            stage="stage4",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是一个专业的小说作家，擅长创作生动有趣的小说内容。",
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
-
-    def analyze_content(self, content: str, model_type: str = None) -> str:
-        """分析内容"""
-        prompt = f"请分析以下小说内容：\n\n{content}\n\n请从情节、人物、语言风格等方面进行分析。"
-
-        return self.chat_completion(
-            model_type=model_type,
-            stage="stage1",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是一个专业的文学评论家，擅长分析小说作品。",
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
-
-    def optimize_content(
-        self, content: str, suggestions: str, model_type: str = None
-    ) -> str:
-        """优化内容"""
-        prompt = f"请根据以下建议优化小说内容：\n\n原始内容：\n{content}\n\n优化建议：\n{suggestions}"
-
-        return self.chat_completion(
-            model_type=model_type,
-            stage="stage5",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是一个专业的小说编辑，擅长优化和改进小说内容。",
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
-
-    def check_consistency(self, chapters: List[str], model_type: str = None) -> str:
-        """检查章节一致性"""
-        content = "\n\n".join(
-            [f"第{i + 1}章：\n{chapter}" for i, chapter in enumerate(chapters)]
-        )
-
-        prompt = f"请检查以下小说章节的一致性：\n\n{content}\n\n请检查人物性格、情节发展、时间线等方面的一致性。"
-
-        return self.chat_completion(
-            model_type=model_type,
-            stage="stage3",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是一个专业的小说编辑，擅长检查小说内容的一致性。",
-                },
-                {"role": "user", "content": prompt},
-            ],
+        raise NotImplementedError(
+            "get_current_model 已废弃，请通过 role_config.provider 获取当前模型"
         )

@@ -52,30 +52,10 @@ class AIRolesConfig:
             max_tokens=8000,
         )
     )
-    reviewer: AIRoleConfig = field(
-        default_factory=lambda: AIRoleConfig(
-            provider="deepseek",
-            model="deepseek-chat",
-            temperature=0.3,
-            top_p=0.7,
-            max_tokens=4000,
-        )
-    )
-    refiner: AIRoleConfig = field(
-        default_factory=lambda: AIRoleConfig(
-            provider="doubao",
-            model="doubao-seed-2-0-lite-260215",
-            temperature=0.5,
-            top_p=0.8,
-            max_tokens=8000,
-        )
-    )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "generator": self.generator.to_dict(),
-            "reviewer": self.reviewer.to_dict(),
-            "refiner": self.refiner.to_dict(),
         }
 
     @classmethod
@@ -83,25 +63,13 @@ class AIRolesConfig:
         config = cls()
         if "generator" in data:
             config.generator = AIRoleConfig.from_dict(data["generator"])
-        if "reviewer" in data:
-            config.reviewer = AIRoleConfig.from_dict(data["reviewer"])
-        if "refiner" in data:
-            config.refiner = AIRoleConfig.from_dict(data["refiner"])
         return config
 
     def get_role_config(self, role_name: str) -> AIRoleConfig:
         if role_name == "generator":
             return self.generator
-        elif role_name == "reviewer":
-            return self.reviewer
-        elif role_name == "refiner":
-            return self.refiner
         return self.generator
 
     def set_role_config(self, role_name: str, config: AIRoleConfig):
         if role_name == "generator":
             self.generator = config
-        elif role_name == "reviewer":
-            self.reviewer = config
-        elif role_name == "refiner":
-            self.refiner = config

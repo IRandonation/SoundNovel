@@ -5,6 +5,11 @@ SoundNovel CLI 主入口
 - init: 初始化项目
 - outline: 生成章节大纲
 - expand: 扩写章节内容
+- continue: 续写章节
+- status: 查看项目状态
+- settings: 配置AI角色和设置
+- touch: 标记章节修改类型
+- regenerate: 重生成指定章节
 """
 
 import argparse
@@ -31,12 +36,16 @@ def create_parser() -> argparse.ArgumentParser:
   %(prog)s outline                 生成章节大纲
   %(prog)s expand --chapter 1      扩写第1章
   %(prog)s expand --start 1 --end 10   扩写第1-10章
+  %(prog)s continue                续写章节
+  %(prog)s status                  查看项目状态
+  %(prog)s touch --chapter 15 --type content  标记章节修改
+  %(prog)s regenerate --chapters 12-14        重生成章节
 
 更多信息:
   查看 README.md 获取详细使用指南
         """
     )
-    
+
     # 全局选项
     parser.add_argument(
         '-v', '--version',
@@ -48,14 +57,14 @@ def create_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='显示详细日志'
     )
-    
+
     # 子命令
     subparsers = parser.add_subparsers(
         dest='command',
         title='可用命令',
         help='使用 %(prog)s <command> -h 查看命令帮助'
     )
-    
+
     # init 命令
     init_parser = subparsers.add_parser(
         'init',
@@ -78,7 +87,7 @@ def create_parser() -> argparse.ArgumentParser:
         help='跳过交互式 API 配置向导'
     )
     init_parser.set_defaults(func=commands.init)
-    
+
     # outline 命令
     outline_parser = subparsers.add_parser(
         'outline',
@@ -88,8 +97,8 @@ def create_parser() -> argparse.ArgumentParser:
     outline_parser.add_argument(
         '--config', '-c',
         type=str,
-        default='05_script/session.json',
-        help='配置文件路径（默认: 05_script/session.json）'
+        default='user/config/session.json',
+        help='配置文件路径（默认: user/config/session.json）'
     )
     outline_parser.add_argument(
         '--output', '-o',
@@ -112,8 +121,14 @@ def create_parser() -> argparse.ArgumentParser:
         type=int,
         help='结束章节号'
     )
+    outline_parser.add_argument(
+        '--num-acts', '-a',
+        type=int,
+        default=3,
+        help='幕数（默认: 3）'
+    )
     outline_parser.set_defaults(func=commands.outline)
-    
+
     # expand 命令
     expand_parser = subparsers.add_parser(
         'expand',
@@ -123,8 +138,8 @@ def create_parser() -> argparse.ArgumentParser:
     expand_parser.add_argument(
         '--config', '-c',
         type=str,
-        default='05_script/session.json',
-        help='配置文件路径（默认: 05_script/session.json）'
+        default='user/config/session.json',
+        help='配置文件路径（默认: user/config/session.json）'
     )
     expand_parser.add_argument(
         '--outline-file', '-f',
@@ -156,34 +171,107 @@ def create_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='强制交互模式'
     )
+    expand_parser.add_argument(
+        '--outline-window',
+        type=int,
+        default=None,
+        help='大纲上下文窗口大小（默认: 30）'
+    )
+    expand_parser.add_argument(
+        '--draft-window',
+        type=int,
+        default=None,
+        help='正文上下文窗口大小（默认: 10）'
+    )
     expand_parser.set_defaults(func=commands.expand)
-    
+
     # status 命令
     status_parser = subparsers.add_parser(
         'status',
         help='查看项目状态',
-        description='显示当前项目的生成进度和配置状态'
+        description='显示当前项目的生成进度、配置状态和章节状态'
     )
     status_parser.set_defaults(func=commands.status)
-    
+
     # continue 命令
     continue_parser = subparsers.add_parser(
         'continue',
         help='续写章节',
-        description='从上次结束的章节继续生成'
+        description='从上次结束的章节或第一个dirty章节继续生成'
     )
     continue_parser.add_argument(
         '--end', '-e',
         type=int,
         help='结束章节号（默认: 总章节数）'
     )
+    continue_parser.add_argument(
+        '--cascade',
+        action='store_true',
+        help='自动级联重生成所有dirty章节'
+    )
+    continue_parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='仅显示将生成哪些章节，不实际执行'
+    )
     continue_parser.set_defaults(func=commands.continue_write)
-    
+
+    # touch 命令
+    touch_parser = subparsers.add_parser(
+        'touch',
+        help='标记章节修改类型',
+        description='用户修改章节正文后，告知系统修改的性质（cosmetic/content）'
+    )
+    touch_parser.add_argument(
+        '--chapter', '-ch',
+        type=int,
+        required=True,
+        help='章节号'
+    )
+    touch_parser.add_argument(
+        '--type', '-t',
+        type=str,
+        choices=['cosmetic', 'content'],
+        required=True,
+        help='修改类型: cosmetic=仅润色, content=内容变更'
+    )
+    touch_parser.add_argument(
+        '--no-cascade',
+        action='store_true',
+        help='不触发级联dirty标记'
+    )
+    touch_parser.set_defaults(func=commands.touch)
+
+    # regenerate 命令
+    regenerate_parser = subparsers.add_parser(
+        'regenerate',
+        help='重生成指定章节',
+        description='重生成指定范围的章节正文或大纲'
+    )
+    regenerate_parser.add_argument(
+        '--chapters',
+        type=str,
+        help='章节范围，如 "12-14" 或 "15"'
+    )
+    regenerate_parser.add_argument(
+        '--chapter',
+        type=int,
+        help='单章节号'
+    )
+    regenerate_parser.add_argument(
+        '--outline',
+        action='store_true',
+        help='仅重生成大纲（而非正文）'
+    )
+    regenerate_parser.add_argument(
+        '--yes', '-y',
+        action='store_true',
+        help='跳过确认，自动级联'
+    )
+    regenerate_parser.set_defaults(func=commands.regenerate)
+
     from novel_generator.cli.commands.settings_cmd import add_parser as add_settings_parser
     add_settings_parser(subparsers)
-    
-    from novel_generator.cli.commands.review_cmd import add_parser as add_review_parser
-    add_review_parser(subparsers)
 
     return parser
 
@@ -192,26 +280,32 @@ def main():
     """主入口函数"""
     parser = create_parser()
     args = parser.parse_args()
-    
+
     # 没有子命令时显示帮助
     if not args.command:
         parser.print_help()
         sys.exit(1)
-    
+
     # 设置日志
     logger = setup_cli_logging()
     if args.verbose:
         logger.setLevel('DEBUG')
-    
+
     # 执行命令
     try:
         exit_code = args.func(args)
         sys.exit(exit_code if exit_code is not None else 0)
     except KeyboardInterrupt:
-        print("\n\n⚠️  操作已取消")
+        try:
+            print("\n\n⚠️  操作已取消")
+        except UnicodeEncodeError:
+            print("\n\n[WARN] 操作已取消")
         sys.exit(130)
     except Exception as e:
-        print(f"\n❌ 错误: {e}")
+        try:
+            print(f"\n❌ 错误: {e}")
+        except UnicodeEncodeError:
+            print(f"\n[ERROR] {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()

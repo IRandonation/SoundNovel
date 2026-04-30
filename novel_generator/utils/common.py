@@ -40,7 +40,7 @@ def get_project_root() -> Path:
 
 
 def setup_logging(
-    log_file: str = "06_log/novel_generator.log",
+    log_file: str = "user/logs/novel_generator.log",
     level: int = logging.INFO,
     log_to_console: bool = True
 ) -> logging.Logger:
@@ -86,7 +86,7 @@ def setup_logging(
 
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     project_root = get_project_root()
-    session_path = project_root / "05_script" / "session.json"
+    session_path = project_root / "user/config" / "session.json"
     
     if config_path is None:
         if session_path.exists():
@@ -180,9 +180,9 @@ def validate_project_structure(
     # 默认必需文件（基础创作流程）
     if required_files is None:
         required_files = [
-            "01_source/core_setting.yaml",
-            "01_source/overall_outline.yaml",
-            "04_prompt/prompts/style_guide.yaml",
+            "user/source/core_setting.yaml",
+            "user/source/overall_outline.yaml",
+            "user/prompts/style_guide.yaml",
         ]
     
     missing_files = []
@@ -214,15 +214,16 @@ def find_outline_files(project_root: Optional[Path] = None) -> List[Path]:
     if project_root is None:
         project_root = get_project_root()
     
-    outline_dir = project_root / "02_outline"
+    outline_dir = project_root / "user/output/outline"
     if not outline_dir.exists():
         return []
     
-    # 查找YAML和TXT文件
+    # 查找YAML、JSON和TXT文件
     yaml_files = list(outline_dir.glob("chapter_outline_*.yaml"))
+    json_files = list(outline_dir.glob("*.json"))
     txt_files = list(outline_dir.glob("*.txt"))
-    
-    return sorted(yaml_files + txt_files)
+
+    return sorted(yaml_files + json_files + txt_files)
 
 
 def get_latest_outline_file(project_root: Optional[Path] = None) -> Optional[Path]:
@@ -250,13 +251,13 @@ def ensure_directories(project_root: Optional[Path] = None) -> None:
         project_root = get_project_root()
     
     directories = [
-        "01_source",
-        "02_outline",
-        "03_draft",
-        "04_prompt/prompts",
-        "04_prompt/tracking",
-        "05_script",
-        "06_log",
+        "user/source",
+        "user/output/outline",
+        "user/output/draft",
+        "user/prompts/prompts",
+        "user/prompts/tracking",
+        "user/config",
+        "user/logs",
     ]
     
     for dir_name in directories:
@@ -276,7 +277,7 @@ def load_core_setting(project_root: Optional[Path] = None) -> Dict[str, Any]:
     if project_root is None:
         project_root = get_project_root()
     
-    setting_path = project_root / "01_source" / "core_setting.yaml"
+    setting_path = project_root / "user/source" / "core_setting.yaml"
     return load_yaml_file(setting_path, default={})
 
 
@@ -293,7 +294,7 @@ def load_overall_outline(project_root: Optional[Path] = None) -> Dict[str, Any]:
     if project_root is None:
         project_root = get_project_root()
     
-    outline_path = project_root / "01_source" / "overall_outline.yaml"
+    outline_path = project_root / "user/source" / "overall_outline.yaml"
     return load_yaml_file(outline_path, default={})
 
 
@@ -310,7 +311,7 @@ def load_style_guide(project_root: Optional[Path] = None) -> Dict[str, Any]:
     if project_root is None:
         project_root = get_project_root()
     
-    style_path = project_root / "04_prompt" / "prompts" / "style_guide.yaml"
+    style_path = project_root / "user/prompts" / "prompts" / "style_guide.yaml"
     return load_yaml_file(style_path, default={})
 
 

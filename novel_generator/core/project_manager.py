@@ -33,14 +33,14 @@ class ProjectManager:
     def _create_directory_structure(self):
         """创建项目目录结构"""
         directories = [
-            "01_source",
-            "02_outline",
-            "03_draft",
-            "04_prompt",
-            "05_script",
-            "06_log",
-            "06_log/ai_api_logs",
-            "06_log/system_logs",
+            "user/source",
+            "user/output/outline",
+            "user/output/draft",
+            "user/prompts",
+            "user/config",
+            "user/logs",
+            "user/logs/ai_api_logs",
+            "user/logs/system_logs",
         ]
 
         for directory in directories:
@@ -175,7 +175,7 @@ class ProjectManager:
                     session.api_config.doubao_models[key] = endpoint
 
             model = endpoint or session.api_config.doubao_models.get(
-                "default_model", ""
+                "expansion_model", ""
             )
             success, message = self._test_doubao_connection(
                 api_key, session.api_config.doubao_api_base_url, model
@@ -204,13 +204,12 @@ class ProjectManager:
         results = {}
 
         if provider in (None, "doubao") and session.api_config.doubao_api_key:
-            if session.api_config.provider == "doubao":
-                endpoint = session.api_config.doubao_models.get("default_model", "")
-                results["doubao"] = self._test_doubao_connection(
-                    session.api_config.doubao_api_key,
-                    session.api_config.doubao_api_base_url,
-                    endpoint,
-                )
+            endpoint = session.api_config.doubao_models.get("expansion_model", "")
+            results["doubao"] = self._test_doubao_connection(
+                session.api_config.doubao_api_key,
+                session.api_config.doubao_api_base_url,
+                endpoint,
+            )
 
         if provider in (None, "deepseek") and session.api_config.deepseek_api_key:
             if session.api_config.provider == "deepseek":
@@ -267,7 +266,7 @@ class ProjectManager:
 # 可以添加其他您认为重要的设定信息
 """
 
-        core_setting_path = self.project_root / "01_source" / "core_setting.yaml"
+        core_setting_path = self.project_root / "user/source" / "core_setting.yaml"
         with open(core_setting_path, "w", encoding="utf-8") as f:
             f.write(core_setting_template)
         print(f"📄 生成核心设定模板: {core_setting_path}")
@@ -305,7 +304,7 @@ class ProjectManager:
 # 核心思想：
 """
 
-        overall_outline_path = self.project_root / "01_source" / "overall_outline.yaml"
+        overall_outline_path = self.project_root / "user/source" / "overall_outline.yaml"
         with open(overall_outline_path, "w", encoding="utf-8") as f:
             f.write(overall_outline_template)
         print(f"📄 生成整体大纲模板: {overall_outline_path}")
@@ -324,11 +323,11 @@ class ProjectManager:
 
     def validate_project_structure(self) -> bool:
         required_files = [
-            "01_source/core_setting.yaml",
-            "01_source/overall_outline.yaml",
-            "04_prompt/chapter_expand_prompt.yaml",
-            "04_prompt/style_guide.yaml",
-            "05_script/session.json",
+            "user/source/core_setting.yaml",
+            "user/source/overall_outline.yaml",
+            "user/prompts/chapter_expand_prompt.yaml",
+            "user/prompts/style_guide.yaml",
+            "user/config/session.json",
         ]
 
         missing_files = []
@@ -369,8 +368,8 @@ def main():
     if manager.initialize_project():
         print("\n🎉 项目初始化完成！")
         print("\n📋 下一步操作指南:")
-        print("1. 填写 01_source/ 目录下的核心设定和整体大纲")
-        print("2. 在 05_script/config.json 中配置API密钥")
+        print("1. 填写 user/source/ 目录下的核心设定和整体大纲")
+        print("2. 在 user/config/config.json 中配置API密钥")
         print("3. 运行 python main.py 开始创作")
     else:
         print("\n❌ 项目初始化失败，请检查错误信息")

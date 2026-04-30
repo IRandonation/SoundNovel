@@ -41,9 +41,6 @@ def _merge_session(source: Dict[str, Any], generation: Dict[str, Any]) -> Dict[s
     gen_cfg = generation.get("generation", {})
     roles = generation.get("roles", {})
 
-    state.generation_config.batch_size = gen_cfg.get(
-        "batch_size", state.generation_config.batch_size
-    )
     state.generation_config.context_chapters = gen_cfg.get(
         "context_chapters", state.generation_config.context_chapters
     )
@@ -109,8 +106,8 @@ def migrate(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", type=str, default=".")
-    parser.add_argument("--session", type=str, default="05_script/session.json")
-    parser.add_argument("--generation", type=str, default="05_script/generation_config.json")
+    parser.add_argument("--session", type=str, default="user/config/session.json")
+    parser.add_argument("--generation", type=str, default="user/config/generation_config.json")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
