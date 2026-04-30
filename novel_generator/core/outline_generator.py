@@ -672,6 +672,7 @@ class OutlineGenerator:
         overall_outline: Dict[str, Any],
         num_acts: int = 0,
         chapter_range: Optional[Tuple[int, int]] = None,
+        batch_size: int = None,
     ) -> Dict[str, Any]:
         """
         两阶段大纲生成（幕规划 → 章骨架），骨架直接驱动扩写。
@@ -710,7 +711,8 @@ class OutlineGenerator:
         existing_skeletons = self._load_existing_skeletons()
 
         gen_config = self.config.get("generation", {})
-        batch_size = gen_config.get("skeleton_batch_size", 10)
+        # 使用传入的 batch_size 或从配置读取
+        batch_size = batch_size or gen_config.get("skeleton_batch_size", 10)
         context_window = gen_config.get("skeleton_context_window", 15)
 
         skeleton_generator = ChapterSkeletonGenerator(
