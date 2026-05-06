@@ -303,6 +303,26 @@ class ChapterSkeletonGenerator:
         self.context_window = context_window
         self.logger = logging.getLogger(__name__)
 
+        # 预计算静态内容，用于缓存优化
+        self._static_core_setting = yaml.dump(
+            self.core_setting, allow_unicode=True, default_flow_style=False
+        )
+        self._static_overall_story = self._build_overall_story_text()
+
+    def _build_static_context(self, act_data: Dict[str, Any]) -> str:
+        """构建静态上下文（可缓存部分）"""
+        act_info = yaml.dump(act_data, allow_unicode=True, default_flow_style=False)
+
+        return f"""【核心设定】
+{self._static_core_setting}
+
+【整体故事框架】
+{self._static_overall_story}
+
+【当前幕规划】
+{act_info}
+"""
+
     def generate_chapter_skeletons(
         self, act_number: int, chapter_range: Tuple[int, int]
     ) -> Dict[str, Any]:
@@ -317,15 +337,24 @@ class ChapterSkeletonGenerator:
 
         act_data, _ = self._find_act_data(act_number)
 
-        prompt = self._build_batch_skeleton_prompt(
+        # 构建静态和动态prompt
+        static_context = self._build_static_context(act_data)
+        dynamic_prompt = self._build_dynamic_prompt(
             act_number, act_data, chapter_range
         )
-        self.logger.debug(f"章骨架 Prompt 长度: {len(prompt)} 字符")
+        self.logger.debug(f"静态上下文长度: {len(static_context)} 字符, 动态Prompt长度: {len(dynamic_prompt)} 字符")
 
         # 重试循环：解析失败时最多重试2次
         max_retries = 2
+        chapter_count = end_ch - start_ch + 1
         for attempt in range(max_retries + 1):
-            response = self._call_ai_api(prompt)
+            # 启用JSON输出模式（DeepSeek原生支持）
+            response = self._call_ai_api(
+                static_context=static_context,
+                dynamic_prompt=dynamic_prompt,
+                json_output=True,
+                chapter_count=chapter_count,
+            )
             skeletons = self._parse_batch_skeleton_response(response, chapter_range)
 
             if skeletons:
@@ -336,9 +365,9 @@ class ChapterSkeletonGenerator:
                 self.logger.warning(
                     f"批次第{start_ch}-{end_ch}章解析失败，第{attempt + 1}次重试..."
                 )
-                # 重试时在prompt末尾追加JSON格式强调
-                if "—— 重要提醒" not in prompt:
-                    prompt += (
+                # 重试时在动态prompt末尾追加JSON格式强调
+                if "—— 重要提醒" not in dynamic_prompt:
+                    dynamic_prompt += (
                         f"\n\n—— 重要提醒（第{attempt + 1}次重试）——\n"
                         "上轮输出JSON格式有误导致解析失败。请务必：\n"
                         "1. 确保所有字符串值中的双引号已转义（\\\"）\n"
@@ -380,50 +409,84 @@ class ChapterSkeletonGenerator:
                     phase_map[ch] = desc
         return phase_map
 
-    def _build_batch_skeleton_prompt(
+    def _build_dynamic_prompt(
         self,
         act_number: int,
         act_data: Dict[str, Any],
         chapter_range: Tuple[int, int],
     ) -> str:
-        """构建批次章骨架Prompt"""
-        template_path = Path("user/prompts/outline_generation.yaml")
-        template_data = {}
-        if template_path.exists():
-            with open(template_path, "r", encoding="utf-8") as f:
-                template_data = yaml.safe_load(f)
-
-        template_str = template_data.get("templates", {}).get(
-            "chapter_skeleton", {}
-        ).get("template", "")
-
-        if not template_str:
-            raise RetryableGenerationError("章级骨架模板为空，请检查 user/prompts/outline_generation.yaml")
-
+        """构建动态部分Prompt（每批不同的内容）"""
         start_ch, end_ch = chapter_range
         batch_count = end_ch - start_ch + 1
 
-        # 源材料
-        core_setting_text = yaml.dump(self.core_setting, allow_unicode=True, default_flow_style=False)
-        overall_story = self._build_overall_story_text()
-        act_info = yaml.dump(act_data, allow_unicode=True, default_flow_style=False)
-
-        # 前文大纲
+        # 前文大纲（动态内容）
         previous_skeletons = self._format_previous_skeletons(start_ch)
 
-        # 批次阶段指引
+        # 批次阶段指引（动态内容）
         phase_map = self._parse_chapter_phases(act_data.get("章节划分", []), chapter_range)
         batch_phases = self._format_batch_phases(chapter_range, phase_map)
 
-        return template_str.format(
-            chapter_range=f"{start_ch}-{end_ch}",
-            batch_count=batch_count,
-            core_setting=core_setting_text,
-            overall_story=overall_story,
-            act_info=act_info,
-            previous_skeletons=previous_skeletons,
-            batch_phases=batch_phases,
-        )
+        # 构建动态prompt（只包含变化的部分）
+        prompt = f"""【任务】一次性生成以下 {batch_count} 章的详细骨架（第{start_ch}-{end_ch}章）。
+
+══════════════════════════════════════
+—— 已生成大纲（前章上下文）——
+══════════════════════════════════════
+
+{previous_skeletons}
+
+══════════════════════════════════════
+—— 本章批次指引 ——
+══════════════════════════════════════
+
+{batch_phases}
+
+══════════════════════════════════════
+—— 骨架设计规则 ——
+══════════════════════════════════════
+
+1. 每章必须有独立的"起承转合"微结构，不能只是上一章的延续
+2. 核心事件要写明因果逻辑（因为X，所以Y，导致Z）
+3. 章节之间剧情自然递进，前章的结尾卡点导向后章的开场
+4. 情绪曲线在整批章节内有起有伏，避免连续多章同质情绪
+5. 伏笔埋设与回收要跨章协调：前几章埋的伏笔可在后几章回收
+
+══════════════════════════════════════
+—— 输出格式 ——
+══════════════════════════════════════
+
+请以 JSON 格式输出（务必使用双引号），为第{start_ch}-{end_ch}章的每一章生成完整骨架：
+```json
+{{
+  "第N章": {{
+    "标题": "章节标题",
+    "字数目标": 2500,
+    "章节定位": "本章在幕中的角色（幕首章/过渡铺垫/冲突升级/小高潮/缓冲章/幕尾高潮）",
+    "核心事件": "2-3句描述核心情节，写明因果链",
+    "与前章因果": "承接上章XX，推进YY，为下章ZZ埋笔",
+    "人物行动": {{
+      "主角": "主角行动与动机",
+      "关键配角": "配角行动与主线关联"
+    }},
+    "场景概览": [
+      "开场：XX地点 — 核心事件概述",
+      "发展：XX地点 — 核心事件概述",
+      "高潮：XX地点 — 核心事件概述",
+      "收束：XX地点 — 核心事件概述"
+    ],
+    "情绪曲线": "本章情绪走向",
+    "伏笔处理": {{
+      "埋设": ["伏笔描述"],
+      "回收": ["回收描述（标注前章编号）"]
+    }},
+    "结尾卡点": "章末悬念/钩子（具体描述）"
+  }}
+}}
+```
+重要：必须为第{start_ch}-{end_ch}章的每一章输出完整骨架，不得遗漏任何一章。章节之间剧情自然递进，伏笔跨章协调。
+"""
+
+        return prompt
 
     def _build_overall_story_text(self) -> str:
         """构建整体故事框架文本"""
@@ -493,18 +556,45 @@ class ChapterSkeletonGenerator:
 
         return "\n".join(lines) if lines else "（参见幕规划章节划分）"
 
-    def _call_ai_api(self, prompt: str) -> str:
-        """调用AI API"""
+    def _call_ai_api(
+        self,
+        static_context: str,
+        dynamic_prompt: str,
+        json_output: bool = False,
+        chapter_count: int = 1,
+    ) -> str:
+        """调用AI API，支持JSON输出模式。静态内容放入system message以利用缓存。"""
         try:
+            messages = [
+                {
+                    "role": "system",
+                    "content": f"""你是一个专业的小说章节规划师，擅长设计章节骨架结构，确保章节间的因果链、情绪节奏和伏笔衔接到位。输出必须严格遵循用户指定的JSON格式。
+
+══════════════════════════════════════
+—— 源材料（所有批次共享）——
+══════════════════════════════════════
+
+{static_context}""",
+                },
+                {"role": "user", "content": dynamic_prompt},
+            ]
+
+            kwargs = {}
+            if json_output:
+                kwargs["response_format"] = {"type": "json_object"}
+                self.logger.info("启用JSON输出模式")
+                # JSON输出模式需要更多token，根据章节数动态计算
+                # 每章大约需要 500-800 token 的JSON输出
+                role_config = self.ai_role_manager.get_role_config(AIRole.GENERATOR)
+                configured_max = role_config.max_tokens
+                estimated_tokens = min(configured_max, max(8000, chapter_count * 800))
+                kwargs["max_tokens"] = estimated_tokens
+                self.logger.info(f"设置最大token数: {estimated_tokens} (章节数: {chapter_count}, 配置上限: {configured_max})")
+
             response = self.ai_role_manager.chat_completion(
                 role=AIRole.GENERATOR,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是一个专业的小说章节规划师，擅长设计章节骨架结构，确保章节间的因果链、情绪节奏和伏笔衔接到位。输出必须严格遵循用户指定的JSON格式。",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                messages=messages,
+                **kwargs,
             )
             return response or ""
         except Exception as e:
@@ -672,6 +762,7 @@ class OutlineGenerator:
         overall_outline: Dict[str, Any],
         num_acts: int = 0,
         chapter_range: Optional[Tuple[int, int]] = None,
+        batch_size: int = None,
     ) -> Dict[str, Any]:
         """
         两阶段大纲生成（幕规划 → 章骨架），骨架直接驱动扩写。
@@ -710,7 +801,8 @@ class OutlineGenerator:
         existing_skeletons = self._load_existing_skeletons()
 
         gen_config = self.config.get("generation", {})
-        batch_size = gen_config.get("skeleton_batch_size", 10)
+        # 使用传入的 batch_size 或从配置读取
+        batch_size = batch_size or gen_config.get("skeleton_batch_size", 10)
         context_window = gen_config.get("skeleton_context_window", 15)
 
         skeleton_generator = ChapterSkeletonGenerator(

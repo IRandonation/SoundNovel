@@ -175,26 +175,74 @@ class DeepSeekClient(BaseModelClient):
     def chat_completion(
         self, model: str, messages: List[Dict[str, str]], **kwargs
     ) -> str:
-        """聊天补全"""
+        """聊天补全，支持缓存统计和JSON输出"""
         try:
             self._apply_rate_limit()
 
             self.logger.info(f"发送DeepSeek API请求，模型: {model}")
 
-            completion = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=kwargs.get("max_tokens", self.max_tokens),
-                temperature=kwargs.get("temperature", self.temperature),
-                top_p=kwargs.get("top_p", self.top_p),
-                stream=False,
-            )
+            # 构建请求参数
+            max_tokens = kwargs.get("max_tokens", self.max_tokens)
+            self.logger.info(f"设置max_tokens: {max_tokens}")
+            request_kwargs = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": kwargs.get("temperature", self.temperature),
+                "top_p": kwargs.get("top_p", self.top_p),
+                "stream": False,
+            }
+
+            # 支持JSON输出模式
+            response_format = kwargs.get("response_format")
+            if response_format:
+                request_kwargs["response_format"] = response_format
+                self.logger.info("启用JSON输出模式")
+
+            completion = self.client.chat.completions.create(**request_kwargs)
+
+            # 记录缓存统计
+            self._log_cache_stats(completion)
+
+            # 验证响应结构
+            if completion is None:
+                raise Exception("DeepSeek API返回空响应")
+            if not hasattr(completion, 'choices') or completion.choices is None or len(completion.choices) == 0:
+                raise Exception(f"DeepSeek API响应缺少choices字段，响应: {completion}")
+            if completion.choices[0].message is None:
+                raise Exception("DeepSeek API响应缺少message字段")
 
             self.logger.info("DeepSeek API请求成功")
             return completion.choices[0].message.content
 
         except Exception as e:
             raise Exception(f"DeepSeek聊天补全失败: {e}")
+
+    def _log_cache_stats(self, completion):
+        """记录DeepSeek缓存统计"""
+        try:
+            usage = completion.usage
+            if usage and hasattr(usage, 'prompt_cache_hit_tokens') and hasattr(usage, 'prompt_cache_miss_tokens'):
+                hit_tokens = usage.prompt_cache_hit_tokens
+                miss_tokens = usage.prompt_cache_miss_tokens
+                total_input = usage.prompt_tokens
+                total_output = usage.completion_tokens
+
+                cache_rate = 0.0
+                if total_input > 0:
+                    cache_rate = hit_tokens / total_input * 100
+
+                self.logger.info(
+                    f"DeepSeek缓存统计: "
+                    f"输入Token={total_input}, "
+                    f"缓存命中={hit_tokens}, "
+                    f"缓存未命中={miss_tokens}, "
+                    f"命中率={cache_rate:.1f}%, "
+                    f"输出Token={total_output}"
+                )
+        except Exception as e:
+            # 缓存统计失败不影响主流程
+            self.logger.debug(f"缓存统计记录失败: {e}")
 
     def test_connection(self) -> bool:
         """测试连接"""

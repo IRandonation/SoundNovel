@@ -40,7 +40,6 @@ class ConfigManager:
             "generation": generation_data.get("generation", {}),
             "roles": generation_data.get("roles", {}),
             "providers": generation_data.get("providers", {}),
-            "quality_check": generation_data.get("quality_check", {}),
             "session": session_state.to_dict(),
         }
 
@@ -63,9 +62,6 @@ class ConfigManager:
         payload["generation"] = unified.get("generation", payload.get("generation", {}))
         payload["roles"] = unified.get("roles", payload.get("roles", {}))
         payload["providers"] = unified.get("providers", payload.get("providers", {}))
-        payload["quality_check"] = unified.get(
-            "quality_check", payload.get("quality_check", {})
-        )
 
         return self.generation_manager.save(payload)
 
@@ -73,27 +69,6 @@ class ConfigManager:
         session_payload = unified.get("session", {})
         if session_payload:
             self.session_manager._state = SessionState.from_dict(session_payload)
-
-        generation_cfg = unified.get("generation", {})
-        if generation_cfg:
-            self.session_manager.state.generation_config.context_chapters = (
-                generation_cfg.get(
-                    "context_chapters",
-                    self.session_manager.state.generation_config.context_chapters,
-                )
-            )
-            self.session_manager.state.generation_config.default_word_count = (
-                generation_cfg.get(
-                    "default_word_count",
-                    self.session_manager.state.generation_config.default_word_count,
-                )
-            )
-
-        roles = unified.get("roles", {})
-        if roles:
-            self.session_manager.state.ai_roles = self.session_manager.state.ai_roles.from_dict(
-                roles
-            )
 
         return self.session_manager.save()
 

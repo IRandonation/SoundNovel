@@ -509,7 +509,7 @@ def run(args):
 
     if any(
         getattr(args, attr, None) is not None
-        for attr in ["max_iterations", "pass_score", "context_chapters", "default_words", "outline_window", "draft_window", "skeleton_batch_size", "skeleton_context_window"]
+        for attr in ["context_chapters", "default_words", "outline_window", "draft_window", "skeleton_batch_size", "skeleton_context_window"]
     ):
         return set_generation_config(gen_config_mgr, args)
 

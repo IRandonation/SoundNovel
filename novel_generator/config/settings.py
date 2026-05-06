@@ -96,6 +96,7 @@ class GenerationConfig:
     world_style: str = ""
     outline_window: int = 30
     draft_window: int = 10
+    batch_size: int = 10  # 批量生成默认批次大小
 
 
 class Settings:
@@ -204,6 +205,8 @@ class Settings:
                 self.generation_config.outline_window = gen_config["outline_window"]
             if "draft_window" in gen_config:
                 self.generation_config.draft_window = gen_config["draft_window"]
+            if "batch_size" in gen_config:
+                self.generation_config.batch_size = gen_config["batch_size"]
 
         if "ai_roles" in config_dict:
             self.ai_roles_config = AIRolesConfig.from_dict(config_dict["ai_roles"])
@@ -280,6 +283,7 @@ class Settings:
                 "world_style": self.generation_config.world_style,
                 "outline_window": self.generation_config.outline_window,
                 "draft_window": self.generation_config.draft_window,
+                "batch_size": self.generation_config.batch_size,
             },
             "ai_roles": self.ai_roles_config.to_dict(),
         }
@@ -334,6 +338,15 @@ class Settings:
 
     def get_default_word_count(self) -> int:
         return self.generation_config.default_word_count
+
+    def get_outline_window(self) -> int:
+        return self.generation_config.outline_window
+
+    def get_draft_window(self) -> int:
+        return self.generation_config.draft_window
+
+    def get_batch_size(self) -> int:
+        return self.generation_config.batch_size
 
     def update_api_key(self, api_key: str):
         self.api_config.api_key = api_key

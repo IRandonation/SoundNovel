@@ -175,6 +175,12 @@ def run(args: argparse.Namespace) -> int:
         outline_window = args.outline_window or gen_config.get("outline_window", 30)
         draft_window = args.draft_window or gen_config.get("draft_window", 10)
 
+        # 检查是否使用批量模式
+        use_batch = len(chapters_to_expand) > 1 and not args.single
+        if use_batch:
+            batch_size = args.batch_size or gen_config.get("batch_size", 10)
+            print_info(f"启用批量生成模式，批次大小: {batch_size}")
+
         draft_dir = config.get("paths", {}).get("draft_dir", "user/output/draft/")
         if not Path(draft_dir).is_absolute():
             draft_dir = str(Path.cwd() / draft_dir)
@@ -187,43 +193,79 @@ def run(args: argparse.Namespace) -> int:
         actual_start = chapters_to_expand[0]
         end_chapter = chapters_to_expand[-1]
 
-        for i, ch_num in enumerate(chapters_to_expand, 1):
-            print()
-            print_info(f"[{i}/{len(chapters_to_expand)}] 正在扩写第 {ch_num} 章...")
+        # 使用批量生成或单章生成
+        if use_batch:
+            # 批量生成模式
+            batch_size = args.batch_size or gen_config.get("batch_size", 10)
 
             try:
-                ch_data = get_chapter_data(outline_data, ch_num)
-                if not ch_data:
-                    print_error(f"大纲中找不到第 {ch_num} 章的数据")
-                    fail_count += 1
-                    continue
-
-                outline_ctx = _build_outline_context(outline_data, ch_num, outline_window)
-                draft_ctx = _build_draft_context(draft_dir, ch_num, draft_window)
-
-                content = expander.expand_chapter(
-                    chapter_num=ch_num,
-                    chapter_outline=ch_data,
-                    outline_context=outline_ctx,
-                    draft_context=draft_ctx,
+                results = expander.expand_range(
+                    chapters_to_expand[0],
+                    chapters_to_expand[-1],
+                    outline_data,
+                    batch_size=batch_size,
                 )
 
-                expander.save_chapter(ch_num, content, draft_dir)
+                # 保存结果并更新状态
+                for ch_num, content in results.items():
+                    try:
+                        expander.save_chapter(ch_num, content, draft_dir)
+                        session_mgr.set_chapter_state(ch_num, "clean")
+                        config_manager.update_progress(
+                            "draft", actual_start, ch_num, str(outline_file)
+                        )
+                        print_success(f"第 {ch_num} 章扩写完成 ({len(content)}字)")
+                        success_count += 1
+                    except Exception as e:
+                        print_error(f"保存第 {ch_num} 章失败: {e}")
+                        fail_count += 1
 
-                # 标记章节为 clean
-                session_mgr.set_chapter_state(ch_num, "clean")
-
-                config_manager.update_progress(
-                    "draft", actual_start, ch_num, str(outline_file)
-                )
-
-                print_success(f"第 {ch_num} 章扩写完成 ({len(content)}字)")
-                success_count += 1
+                # 显示批量统计
+                stats = expander.get_batch_stats()
+                print_info(f"批量生成统计: 总批次数={stats['total_batches']}, 总章节数={stats['total_chapters']}")
 
             except Exception as e:
-                print_error(f"扩写第 {ch_num} 章失败: {e}")
-                fail_count += 1
-                continue
+                print_error(f"批量生成失败: {e}")
+                fail_count = len(chapters_to_expand)
+        else:
+            # 单章生成模式（原有逻辑）
+            for i, ch_num in enumerate(chapters_to_expand, 1):
+                print()
+                print_info(f"[{i}/{len(chapters_to_expand)}] 正在扩写第 {ch_num} 章...")
+
+                try:
+                    ch_data = get_chapter_data(outline_data, ch_num)
+                    if not ch_data:
+                        print_error(f"大纲中找不到第 {ch_num} 章的数据")
+                        fail_count += 1
+                        continue
+
+                    outline_ctx = _build_outline_context(outline_data, ch_num, outline_window)
+                    draft_ctx = _build_draft_context(draft_dir, ch_num, draft_window)
+
+                    content = expander.expand_chapter(
+                        chapter_num=ch_num,
+                        chapter_outline=ch_data,
+                        outline_context=outline_ctx,
+                        draft_context=draft_ctx,
+                    )
+
+                    expander.save_chapter(ch_num, content, draft_dir)
+
+                    # 标记章节为 clean
+                    session_mgr.set_chapter_state(ch_num, "clean")
+
+                    config_manager.update_progress(
+                        "draft", actual_start, ch_num, str(outline_file)
+                    )
+
+                    print_success(f"第 {ch_num} 章扩写完成 ({len(content)}字)")
+                    success_count += 1
+
+                except Exception as e:
+                    print_error(f"扩写第 {ch_num} 章失败: {e}")
+                    fail_count += 1
+                    continue
 
         # 获取实际使用的 role_config
         role_config = expander.ai_role_manager.get_role_config(AIRole.GENERATOR)
