@@ -101,8 +101,8 @@ class ChapterExpander:
     """章节扩写器 — 章节级一次生成，不拆场景。支持批量生成以优化缓存。"""
 
     # 批量生成配置常量
-    BATCH_SIZE_DEFAULT = 10
-    BATCH_SIZE_MAX = 20
+    BATCH_SIZE_DEFAULT = 5
+    BATCH_SIZE_MAX = 10
     CHAPTER_SEPARATOR = "===第{ch}章结束==="
 
     def __init__(
@@ -218,11 +218,21 @@ class ChapterExpander:
         # 构建消息（缓存优化结构）
         messages = self._build_batch_messages(chapters, outline)
 
+        # 计算所需token：根据章节数和字数目标
+        total_word_count = sum(
+            outline.get(f"第{ch}章", {}).get("字数目标", self.settings.get_default_word_count())
+            for ch in chapters
+        )
+        # 中文字符转token比例约1:1.5，添加buffer用于分隔符和额外内容
+        required_tokens = int(total_word_count * 1.5) + 5000
+        self.logger.info(f"批量生成{len(chapters)}章，预估字数{total_word_count}，设置max_tokens={required_tokens}")
+
         # 调用API
         self.logger.info(f"发送批量生成请求（{len(chapters)}章）...")
         response = self.ai_role_manager.chat_completion(
             role=AIRole.GENERATOR,
             messages=messages,
+            max_tokens=required_tokens,
         )
 
         # 解析响应

@@ -182,10 +182,12 @@ class DeepSeekClient(BaseModelClient):
             self.logger.info(f"发送DeepSeek API请求，模型: {model}")
 
             # 构建请求参数
+            max_tokens = kwargs.get("max_tokens", self.max_tokens)
+            self.logger.info(f"设置max_tokens: {max_tokens}")
             request_kwargs = {
                 "model": model,
                 "messages": messages,
-                "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+                "max_tokens": max_tokens,
                 "temperature": kwargs.get("temperature", self.temperature),
                 "top_p": kwargs.get("top_p", self.top_p),
                 "stream": False,
@@ -201,6 +203,14 @@ class DeepSeekClient(BaseModelClient):
 
             # 记录缓存统计
             self._log_cache_stats(completion)
+
+            # 验证响应结构
+            if completion is None:
+                raise Exception("DeepSeek API返回空响应")
+            if not hasattr(completion, 'choices') or completion.choices is None or len(completion.choices) == 0:
+                raise Exception(f"DeepSeek API响应缺少choices字段，响应: {completion}")
+            if completion.choices[0].message is None:
+                raise Exception("DeepSeek API响应缺少message字段")
 
             self.logger.info("DeepSeek API请求成功")
             return completion.choices[0].message.content
