@@ -109,8 +109,9 @@
     GM_addStyle(`
         #tomato-dropzone {
             position: fixed;
-            top: 20px;
+            top: 50%;
             right: 20px;
+            margin-top: -140px;
             width: 280px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border-radius: 12px;
@@ -302,6 +303,42 @@
         return null;
     }
 
+    // 模拟真实用户输入，绕过 React 框架控制
+    async function simulateUserInput(element, value) {
+        if (!element) return false;
+
+        // 聚焦
+        element.focus();
+        element.click();
+        await new Promise(r => setTimeout(r, 100));
+
+        // 选中现有内容
+        element.select();
+        await new Promise(r => setTimeout(r, 50));
+
+        // 使用原生 setter 绕过 React 控制
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        nativeInputValueSetter.call(element, value);
+
+        // 触发完整事件链
+        const events = [
+            new Event('input', { bubbles: true }),
+            new InputEvent('input', { bubbles: true, inputType: 'insertText' }),
+            new Event('change', { bubbles: true }),
+        ];
+
+        for (const event of events) {
+            element.dispatchEvent(event);
+            await new Promise(r => setTimeout(r, 50));
+        }
+
+        // 模拟 blur
+        element.blur();
+        await new Promise(r => setTimeout(r, 50));
+
+        return true;
+    }
+
     // 查找章节号输入框（在"第"和"章"之间的那个）
     function findChapterNumInput() {
         // 策略1：查找包含"第"和"章"文本的父元素，然后找其中的输入框
@@ -361,22 +398,10 @@
             const chapterNumInput = findChapterNumInput();
 
             if (chapterNumInput) {
-                // 设置章节号
-                chapterNumInput.focus();
-                await new Promise(r => setTimeout(r, 100));
-
-                // 清空并设置值
-                chapterNumInput.value = '';
-                chapterNumInput.value = chapterNum;
-
-                // 触发完整事件序列
-                const events = ['input', 'change', 'blur'];
-                for (const eventName of events) {
-                    chapterNumInput.dispatchEvent(new Event(eventName, { bubbles: true }));
-                    await new Promise(r => setTimeout(r, 50));
+                const success = await simulateUserInput(chapterNumInput, String(chapterNum));
+                if (success) {
+                    showToast(`已填写章节号: ${chapterNum}`, 'success');
                 }
-
-                showToast(`已填写章节号: ${chapterNum}`, 'success');
             } else {
                 console.log('[番茄上传助手] 未找到章节号输入框，章节号将包含在标题中');
             }
@@ -385,15 +410,10 @@
         // 填写章节标题
         const titleInput = findElement(CONFIG.titleSelector);
         if (titleInput) {
-            titleInput.focus();
-            await new Promise(r => setTimeout(r, 100));
-            titleInput.value = chapterTitle || '';
-
-            // 触发事件序列
-            const events = ['input', 'change'];
-            for (const eventName of events) {
-                titleInput.dispatchEvent(new Event(eventName, { bubbles: true }));
-                await new Promise(r => setTimeout(r, 50));
+            const success = await simulateUserInput(titleInput, chapterTitle || '');
+            if (!success) {
+                showToast('标题填写失败', 'error');
+                return false;
             }
         } else {
             showToast('未找到标题输入框，请检查配置', 'error');
