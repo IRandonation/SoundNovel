@@ -1,6 +1,6 @@
 """
 settings 命令
-用于配置生成模型和参数设置
+用于配置生成模型和参数设置（新架构版本）
 """
 
 import argparse
@@ -12,8 +12,9 @@ from typing import Optional
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from novel_generator.config.session import SessionManager
-from novel_generator.config.generation_config import GenerationConfigManager
+from novel_generator.novel_manager import NovelManager
+from api.manager import APIManager
+from novel_generator.config.config_manager import ConfigManager
 
 
 PROVIDERS = {
@@ -26,10 +27,6 @@ DEFAULT_MODELS = {
     "deepseek": "deepseek-chat",
 }
 
-ROLES = {
-    "generator": "生成者 (负责大纲生成、章节扩写)",
-}
-
 GEN_PARAMS = {
     "default_word_count": "默认字数目标",
     "outline_window": "大纲上下文窗口 (向前看过往大纲章数)",
@@ -39,89 +36,69 @@ GEN_PARAMS = {
 }
 
 
-def show_current_settings(
-    gen_config_mgr: GenerationConfigManager, session_mgr: SessionManager
-):
+def _get_current_novel_id(project_root: Path) -> Optional[str]:
+    """获取当前小说ID"""
+    novel_manager = NovelManager(str(project_root / "novels"))
+    return novel_manager.get_current_novel_id()
+
+
+def show_current_settings(project_root: Path):
+    """显示当前配置"""
+    novel_id = _get_current_novel_id(project_root)
+
+    if not novel_id:
+        print("\n" + "=" * 60)
+        print("未选择小说，请先运行 'soundnovel novel create' 创建小说")
+        print("=" * 60)
+        return
+
     print("\n" + "=" * 60)
-    print("生成流程配置")
+    print(f"当前小说: {novel_id}")
     print("=" * 60)
 
-    gen_config = gen_config_mgr.get_generation_config()
-    for param, desc in GEN_PARAMS.items():
-        value = gen_config.get(param)
-        print(f"  {desc}: {value}")
+    try:
+        config_manager = ConfigManager(str(project_root), novel_id)
+        gen_config = config_manager.get_generation_config()
 
-    print("\n" + "=" * 60)
-    print("生成模型配置")
-    print("=" * 60)
+        print("\n生成流程配置:")
+        for param, desc in GEN_PARAMS.items():
+            value = gen_config.get(param, "未设置")
+            print(f"  {desc}: {value}")
 
-    ai_roles = session_mgr.state.ai_roles
+        # 显示API配置
+        api_ref = config_manager.config.get("api_config_ref", "")
+        if api_ref:
+            api_manager = APIManager(str(project_root))
+            api_config = api_manager.get_config(api_ref)
+            if api_config:
+                print(f"\nAPI配置: {api_ref}")
+                print(f"  服务商: {PROVIDERS.get(api_config.get('provider', ''), '未知')}")
+                print(f"  模型: {api_config.get('model', '未设置')}")
+        else:
+            print("\nAPI配置: 未设置")
 
-    for role_name, role_desc in ROLES.items():
-        role_config = ai_roles.get_role_config(role_name)
-        provider = role_config.provider
-        model = role_config.model
-        enabled = role_config.enabled
-        temperature = role_config.temperature
-        max_tokens = role_config.max_tokens
-
-        status = "启用" if enabled else "禁用"
-        provider_name = PROVIDERS.get(provider, provider)
-
-        print(f"\n【{role_desc}】")
-        print(f"  状态: {status}")
-        print(f"  服务商: {provider_name}")
-        print(f"  模型: {model}")
-        print(f"  Temperature: {temperature}")
-        print(f"  Max Tokens: {max_tokens}")
-
-    print("\n" + "=" * 60)
-    print("API密钥配置")
-    print("=" * 60)
-
-    api_config = session_mgr.state.api_config
-
-    all_keys_status = []
-    if api_config.doubao_api_key:
-        all_keys_status.append(f"豆包/火山: 已配置")
-    if api_config.deepseek_api_key:
-        all_keys_status.append(f"DeepSeek: 已配置")
-
-    if all_keys_status:
-        print("已配置的 API Key:")
-        for status in all_keys_status:
-            print(f"  - {status}")
-    else:
-        print("API Key: 未配置")
+    except Exception as e:
+        print(f"  错误: {e}")
 
     print("\n" + "=" * 60)
 
 
-def show_config_file(gen_config_mgr: GenerationConfigManager):
-    print("\n" + "=" * 60)
-    print("配置文件内容 (generation_config.json)")
-    print("=" * 60)
-
-    config = gen_config_mgr.config
-    print(json.dumps(config, ensure_ascii=False, indent=2))
-
-    print("\n" + "=" * 60)
-
-
-def interactive_setup(
-    gen_config_mgr: GenerationConfigManager, session_mgr: SessionManager
-):
+def interactive_setup(project_root: Path):
+    """交互式配置向导"""
     print("\n" + "=" * 60)
     print("交互式配置向导")
     print("=" * 60)
 
+    novel_id = _get_current_novel_id(project_root)
+    if not novel_id:
+        print("\n未选择小说，请先运行 'soundnovel novel create' 创建小说")
+        return
+
     while True:
         print("\n请选择配置项:")
         print("  1. 配置生成流程参数")
-        print("  2. 配置生成模型")
-        print("  3. 配置API密钥")
-        print("  4. 查看当前配置")
-        print("  5. 重置为默认配置")
+        print("  2. 配置当前小说的API")
+        print("  3. 查看当前配置")
         print("  q. 退出")
 
         choice = input("\n请输入选择: ").strip().lower()
@@ -129,394 +106,175 @@ def interactive_setup(
         if choice == "q":
             break
         elif choice == "1":
-            _config_generation_params(gen_config_mgr)
+            _config_generation_params(project_root, novel_id)
         elif choice == "2":
-            _config_ai_role(gen_config_mgr, session_mgr)
+            _config_novel_api(project_root, novel_id)
         elif choice == "3":
-            _config_api_key(session_mgr)
-        elif choice == "4":
-            show_current_settings(gen_config_mgr, session_mgr)
-        elif choice == "5":
-            confirm = input("确认重置为默认配置? (y/n): ").strip().lower()
-            if confirm == "y":
-                gen_config_mgr.reset_to_default()
-                print("已重置为默认配置")
+            show_current_settings(project_root)
         else:
             print("无效选择")
 
     print("\n配置完成！")
 
 
-def _config_generation_params(gen_config_mgr: GenerationConfigManager):
+def _config_generation_params(project_root: Path, novel_id: str):
+    """配置生成流程参数"""
     print("\n--- 生成流程参数配置 ---")
 
-    gen_config = gen_config_mgr.get_generation_config()
-
-    for param, desc in GEN_PARAMS.items():
-        current = gen_config.get(param)
-        new_value = input(f"{desc} (当前: {current}): ").strip()
-
-        if new_value:
-            try:
-                if isinstance(current, int):
-                    gen_config[param] = int(new_value)
-                elif isinstance(current, float):
-                    gen_config[param] = float(new_value)
-                else:
-                    gen_config[param] = new_value
-            except ValueError:
-                print(f"无效输入，保持原值: {current}")
-
-    gen_config_mgr.set_generation_config(**gen_config)
-    print("生成流程参数已保存")
-
-
-def _test_api_connection(provider: str, api_key: str, model: str = "") -> tuple:
-    import requests
-
-    if provider == "doubao":
-        api_base_url = "https://ark.cn-beijing.volces.com/api/v3"
-        if not model:
-            model = DEFAULT_MODELS.get("doubao", "doubao-seed-2-0-lite-260215")
-    elif provider == "deepseek":
-        api_base_url = "https://api.deepseek.com"
-        model = "deepseek-chat"
-    else:
-        return False, f"未知的服务商: {provider}"
-
     try:
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        test_data = {
-            "model": model,
-            "messages": [{"role": "user", "content": "Hi"}],
-            "max_tokens": 10,
-        }
-        response = requests.post(
-            f"{api_base_url.rstrip('/')}/chat/completions",
-            headers=headers,
-            json=test_data,
-            timeout=15,
-        )
-        if response.status_code == 200:
-            return True, "API 连接正常"
-        elif response.status_code == 401:
-            return False, "API Key 无效"
-        elif response.status_code == 404:
-            return False, f"模型不存在: {model}"
+        config_manager = ConfigManager(str(project_root), novel_id)
+        gen_config = config_manager.get_generation_config()
+
+        updates = {}
+        for param, desc in GEN_PARAMS.items():
+            current = gen_config.get(param, "")
+            new_value = input(f"{desc} (当前: {current}): ").strip()
+
+            if new_value:
+                try:
+                    if isinstance(current, int):
+                        updates[param] = int(new_value)
+                    elif isinstance(current, float):
+                        updates[param] = float(new_value)
+                    else:
+                        updates[param] = new_value
+                except ValueError:
+                    print(f"  无效输入，跳过")
+
+        if updates:
+            config_manager.set_generation_config(**updates)
+            print("生成流程参数已保存")
         else:
-            return False, f"HTTP 错误: {response.status_code}"
-    except requests.exceptions.Timeout:
-        return False, "连接超时，请检查网络"
-    except requests.exceptions.ConnectionError:
-        return False, "无法连接服务器"
+            print("无更改")
+
     except Exception as e:
-        return False, f"测试失败: {str(e)}"
+        print(f"配置失败: {e}")
 
 
-def _config_api_key(session_mgr: SessionManager):
-    print("\n--- API 密钥配置 ---")
+def _config_novel_api(project_root: Path, novel_id: str):
+    """配置当前小说使用的API"""
+    print("\n--- API配置 ---")
 
-    print("\n可用服务商:")
-    for i, (code, name) in enumerate(PROVIDERS.items(), 1):
-        default_model = DEFAULT_MODELS.get(code, "")
-        print(f"  {i}. {name} ({code}) - 默认模型: {default_model}")
+    api_manager = APIManager(str(project_root))
+    configs = api_manager.list_configs()
 
-    provider_codes = list(PROVIDERS.keys())
-    choice = input("\n请选择服务商: ").strip()
+    if not configs:
+        print("\n没有可用的API配置，请先运行 'soundnovel api create' 创建API配置")
+        return
+
+    print("\n可用API配置:")
+    for i, config in enumerate(configs, 1):
+        default_mark = " [默认]" if config.get("is_default") else ""
+        print(f"  {i}. {config.get('name', '未命名')} ({config.get('provider', '未知')}){default_mark}")
 
     try:
-        provider_idx = int(choice) - 1
-        if provider_idx < 0 or provider_idx >= len(provider_codes):
+        choice = input("\n请选择要使用的API配置: ").strip()
+        idx = int(choice) - 1
+        if idx < 0 or idx >= len(configs):
             print("无效选择")
             return
-        provider = provider_codes[provider_idx]
-    except ValueError:
+
+        selected = configs[idx]
+        config_id = selected.get("id")
+
+        # 更新小说配置
+        novel_manager = NovelManager(str(project_root / "novels"))
+        novel = novel_manager.get_novel(novel_id)
+        if novel:
+            novel_config = novel.load_config()
+            novel_config["api_config_ref"] = config_id
+            novel.save_config(novel_config)
+            print(f"\n已设置小说 '{novel_id}' 使用API配置: {selected.get('name', config_id)}")
+
+    except (ValueError, IndexError):
         print("无效输入")
-        return
-
-    api_key = input("请输入 API Key: ").strip()
-    if not api_key:
-        print("API Key 不能为空")
-        return
-
-    default_model = DEFAULT_MODELS.get(provider, "")
-    print(f"\n默认模型: {default_model}")
-    custom_model = input("请输入模型名称 (直接回车使用默认): ").strip()
-
-    model_to_use = custom_model if custom_model else default_model
-
-    print(f"\n正在测试 {PROVIDERS[provider]} API 连接...")
-    success, message = _test_api_connection(provider, api_key, model_to_use)
-
-    if not success:
-        print(f"❌ 连接测试失败: {message}")
-        print("   API Key 未保存，请检查后重试")
-        return
-
-    print(f"✅ 连接测试成功: {message}")
-
-    session = session_mgr.state
-    if provider == "doubao":
-        session.api_config.doubao_api_key = api_key
-        session.api_config.doubao_api_base_url = (
-            "https://ark.cn-beijing.volces.com/api/v3"
-        )
-        for key in session.api_config.doubao_models:
-            session.api_config.doubao_models[key] = model_to_use
-    elif provider == "deepseek":
-        session.api_config.deepseek_api_key = api_key
-        session.api_config.deepseek_api_base_url = "https://api.deepseek.com"
-        for key in session.api_config.deepseek_models:
-            session.api_config.deepseek_models[key] = model_to_use
-
-    session.api_config.provider = provider
-    session_mgr.save()
-    print(f"\n✅ {PROVIDERS[provider]} API Key 配置完成")
-    print(f"   模型: {model_to_use}")
-
-
-def _get_configured_providers(session_mgr: Optional[SessionManager]) -> list:
-    if session_mgr is None:
-        return []
-    configured = []
-    session = session_mgr.state
-
-    if session.api_config.doubao_api_key:
-        configured.append("doubao")
-    if session.api_config.deepseek_api_key:
-        configured.append("deepseek")
-
-    return configured
-
-
-def _config_ai_role(
-    gen_config_mgr: GenerationConfigManager,
-    session_mgr: Optional[SessionManager] = None,
-):
-    configured_providers = _get_configured_providers(session_mgr)
-
-    if not configured_providers:
-        print("\n❌ 请先配置至少一个服务商的 API Key")
-        print("   运行 'soundnovel settings --interactive' 选择 '3. 配置API密钥'")
-        return
-
-    if session_mgr is None:
-        return
-
-    # 直接配置 generator 角色（唯一角色）
-    role_name = "generator"
-    print(f"\n配置角色: {ROLES[role_name]}")
-
-    role_config = gen_config_mgr.get_role_config(role_name)
-
-    print("\n已配置的服务商:")
-    for i, code in enumerate(configured_providers, 1):
-        name = PROVIDERS.get(code, code)
-        if code == "doubao":
-            model = session_mgr.state.api_config.doubao_models.get(
-                "expansion_model", DEFAULT_MODELS.get(code, "")
-            )
-        elif code == "deepseek":
-            model = session_mgr.state.api_config.deepseek_models.get(
-                "expansion_model", DEFAULT_MODELS.get(code, "")
-            )
-        else:
-            model = DEFAULT_MODELS.get(code, "")
-        print(f"  {i}. {name} ({code}) - 模型: {model}")
-
-    provider_choice = input("请选择服务商: ").strip()
-    try:
-        provider_idx = int(provider_choice) - 1
-        if provider_idx < 0 or provider_idx >= len(configured_providers):
-            print("无效选择")
-            return
-        provider = configured_providers[provider_idx]
-    except ValueError:
-        print("无效输入")
-        return
-
-    if provider == "doubao":
-        default_model = session_mgr.state.api_config.doubao_models.get(
-            "expansion_model", DEFAULT_MODELS.get(provider, "")
-        )
-    elif provider == "deepseek":
-        default_model = session_mgr.state.api_config.deepseek_models.get(
-            "expansion_model", DEFAULT_MODELS.get(provider, "")
-        )
-    else:
-        default_model = DEFAULT_MODELS.get(provider, "")
-
-    print(f"\n当前模型: {default_model}")
-    model = input("请输入模型名称 (直接回车使用当前): ").strip()
-    if not model:
-        model = default_model
-
-    temp_input = input(
-        f"Temperature (当前: {role_config.get('temperature', 0.7)}): "
-    ).strip()
-    temperature = (
-        float(temp_input) if temp_input else role_config.get("temperature", 0.7)
-    )
-
-    tokens_input = input(
-        f"Max Tokens (当前: {role_config.get('max_tokens', 8000)}): "
-    ).strip()
-    max_tokens = (
-        int(tokens_input) if tokens_input else role_config.get("max_tokens", 8000)
-    )
-
-    enable_input = input("是否启用? (y/n): ").strip().lower()
-    enabled = enable_input != "n"
-
-    gen_config_mgr.set_role_config(
-        role_name=role_name,
-        provider=provider,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        enabled=enabled,
-    )
-
-    if session_mgr:
-        session_mgr.set_ai_role_config(
-            role_name=role_name,
-            provider=provider,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            enabled=enabled,
-        )
-
-    print(f"{ROLES[role_name]} 配置已保存")
-
-
-def set_role_config(gen_config_mgr: GenerationConfigManager, args):
-    role_name = args.role
-    if role_name not in ROLES:
-        print(f"错误: 无效的角色名称 '{role_name}'")
-        print(f"可用角色: {', '.join(ROLES.keys())}")
-        return 1
-
-    update_params = {}
-
-    if args.provider:
-        if args.provider not in PROVIDERS:
-            print(f"错误: 无效的服务商 '{args.provider}'")
-            print(f"可用服务商: {', '.join(PROVIDERS.keys())}")
-            return 1
-        update_params["provider"] = args.provider
-
-    if args.model:
-        update_params["model"] = args.model
-
-    if args.temperature is not None:
-        update_params["temperature"] = args.temperature
-
-    if args.top_p is not None:
-        update_params["top_p"] = args.top_p
-
-    if args.max_tokens is not None:
-        update_params["max_tokens"] = args.max_tokens
-
-    if args.enable:
-        update_params["enabled"] = True
-    elif args.disable:
-        update_params["enabled"] = False
-
-    if not update_params:
-        print("错误: 请指定至少一个配置项")
-        return 1
-
-    gen_config_mgr.set_role_config(role_name=role_name, **update_params)
-
-    print(f"角色 '{role_name}' 配置已更新")
-    return 0
-
-
-def set_generation_config(gen_config_mgr: GenerationConfigManager, args):
-    update_params = {}
-
-    if args.default_words is not None:
-        update_params["default_word_count"] = args.default_words
-
-    if args.outline_window is not None:
-        update_params["outline_window"] = args.outline_window
-
-    if args.draft_window is not None:
-        update_params["draft_window"] = args.draft_window
-
-    if args.skeleton_batch_size is not None:
-        update_params["skeleton_batch_size"] = args.skeleton_batch_size
-
-    if args.skeleton_context_window is not None:
-        update_params["skeleton_context_window"] = args.skeleton_context_window
-
-    if not update_params:
-        print("错误: 请指定至少一个配置项")
-        return 1
-
-    gen_config_mgr.set_generation_config(**update_params)
-
-    print("生成流程配置已更新")
-    gen_config = gen_config_mgr.get_generation_config()
-    for param, desc in GEN_PARAMS.items():
-        print(f"  {desc}: {gen_config.get(param)}")
-
-    return 0
+    except Exception as e:
+        print(f"配置失败: {e}")
 
 
 def run(args):
     project_root = Path.cwd()
-    gen_config_mgr = GenerationConfigManager(str(project_root))
-    session_mgr = SessionManager(str(project_root))
 
     if args.interactive:
-        interactive_setup(gen_config_mgr, session_mgr)
+        interactive_setup(project_root)
         return 0
 
     if args.show_file:
-        show_config_file(gen_config_mgr)
+        # 显示当前小说的配置
+        novel_id = _get_current_novel_id(project_root)
+        if novel_id:
+            print(f"\n当前小说: {novel_id}")
+            try:
+                config_manager = ConfigManager(str(project_root), novel_id)
+                gen_config = config_manager.get_generation_config()
+                print("\n生成配置:")
+                print(json.dumps(gen_config, ensure_ascii=False, indent=2))
+            except Exception as e:
+                print(f"无法读取配置: {e}")
         return 0
 
     if args.reset:
         confirm = input("确认重置为默认配置? (y/n): ").strip().lower()
         if confirm == "y":
-            gen_config_mgr.reset_to_default()
-            print("已重置为默认配置")
+            novel_id = _get_current_novel_id(project_root)
+            if novel_id:
+                try:
+                    config_manager = ConfigManager(str(project_root), novel_id)
+                    # 重置为默认配置
+                    default_config = {
+                        "default_word_count": 3200,
+                        "outline_window": 30,
+                        "draft_window": 10,
+                        "skeleton_batch_size": 10,
+                        "skeleton_context_window": 15,
+                    }
+                    config_manager.set_generation_config(**default_config)
+                    print("已重置为默认配置")
+                except Exception as e:
+                    print(f"重置失败: {e}")
+            else:
+                print("未选择小说")
         return 0
 
-    if args.export:
-        if gen_config_mgr.export_config(args.export):
-            print(f"配置已导出到: {args.export}")
-            return 0
-        else:
-            print("导出失败")
-            return 1
-
-    if args.import_config:
-        if gen_config_mgr.import_config(args.import_config):
-            print(f"配置已导入: {args.import_config}")
-            return 0
-        else:
-            print("导入失败")
-            return 1
-
-    if args.role:
-        return set_role_config(gen_config_mgr, args)
-
+    # 处理参数设置
     if any(
         getattr(args, attr, None) is not None
-        for attr in ["context_chapters", "default_words", "outline_window", "draft_window", "skeleton_batch_size", "skeleton_context_window"]
+        for attr in ["default_words", "outline_window", "draft_window", "skeleton_batch_size", "skeleton_context_window"]
     ):
-        return set_generation_config(gen_config_mgr, args)
+        novel_id = _get_current_novel_id(project_root)
+        if not novel_id:
+            print("错误: 未选择小说")
+            return 1
 
-    show_current_settings(gen_config_mgr, session_mgr)
+        try:
+            config_manager = ConfigManager(str(project_root), novel_id)
+            updates = {}
+
+            if args.default_words is not None:
+                updates["default_word_count"] = args.default_words
+            if args.outline_window is not None:
+                updates["outline_window"] = args.outline_window
+            if args.draft_window is not None:
+                updates["draft_window"] = args.draft_window
+            if args.skeleton_batch_size is not None:
+                updates["skeleton_batch_size"] = args.skeleton_batch_size
+            if args.skeleton_context_window is not None:
+                updates["skeleton_context_window"] = args.skeleton_context_window
+
+            if updates:
+                config_manager.set_generation_config(**updates)
+                print("生成流程配置已更新")
+                for param, value in updates.items():
+                    print(f"  {GEN_PARAMS.get(param, param)}: {value}")
+
+            return 0
+
+        except Exception as e:
+            print(f"配置失败: {e}")
+            return 1
+
+    show_current_settings(project_root)
     print("\n提示: 使用 --interactive 进入交互式配置")
-    print("      使用 --show-file 查看完整配置文件")
-    print("      使用 --reset 重置为默认配置")
 
     return 0
 
@@ -537,42 +295,6 @@ def add_parser(subparsers):
     )
 
     parser.add_argument("--reset", action="store_true", help="重置为默认配置")
-
-    parser.add_argument("--export", type=str, metavar="FILE", help="导出配置到指定文件")
-
-    parser.add_argument(
-        "--import-config",
-        type=str,
-        dest="import_config",
-        metavar="FILE",
-        help="从指定文件导入配置",
-    )
-
-    parser.add_argument(
-        "--role",
-        "-r",
-        type=str,
-        choices=list(ROLES.keys()),
-        help="指定要配置的角色 (generator)",
-    )
-
-    parser.add_argument(
-        "--provider", "-p", type=str, choices=list(PROVIDERS.keys()), help="设置服务商"
-    )
-
-    parser.add_argument("--model", "-m", type=str, help="设置模型名称")
-
-    parser.add_argument("--temperature", "-t", type=float, help="设置temperature参数")
-
-    parser.add_argument("--top-p", type=float, dest="top_p", help="设置top_p参数")
-
-    parser.add_argument(
-        "--max-tokens", type=int, dest="max_tokens", help="设置max_tokens参数"
-    )
-
-    parser.add_argument("--enable", action="store_true", help="启用指定角色")
-
-    parser.add_argument("--disable", action="store_true", help="禁用指定角色")
 
     parser.add_argument(
         "--default-words", type=int, dest="default_words", help="设置默认字数目标"

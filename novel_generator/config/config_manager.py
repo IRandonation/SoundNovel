@@ -1,150 +1,164 @@
 from __future__ import annotations
 
-import copy
 import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from novel_generator.config.generation_config import (
-    DEFAULT_CONFIG,
-    GenerationConfigManager,
-)
-from novel_generator.config.session import SessionManager, SessionState
+from novel_generator.novel_manager import NovelManager
+from api.manager import APIManager
 
 logger = logging.getLogger(__name__)
 
 
 class ConfigManager:
-    def __init__(self, project_root: str = "."):
+    """配置管理器 - 仅支持新架构（novels/{novel_id}/）"""
+
+    def __init__(self, project_root: str = ".", novel_id: Optional[str] = None):
         self.project_root = Path(project_root).resolve()
-        self.session_manager = SessionManager(str(self.project_root))
-        self.generation_manager = GenerationConfigManager(str(self.project_root))
-        self._unified: Optional[Dict[str, Any]] = None
+        self.novel_id = novel_id
+
+        # 初始化管理器
+        self._novel_manager = NovelManager(str(self.project_root / "novels"))
+        self._api_manager = APIManager(str(self.project_root))
+
+        if not self.novel_id:
+            # 尝试获取当前活跃小说
+            self.novel_id = self._novel_manager.get_current_novel_id()
+
+        if not self.novel_id:
+            raise ValueError("未指定小说ID，且没有当前活跃小说")
+
+        self._novel = self._novel_manager.get_novel(self.novel_id)
+        if not self._novel:
+            raise ValueError(f"小说 '{self.novel_id}' 不存在")
 
     @property
-    def state(self) -> SessionState:
-        return self.session_manager.state
+    def novel(self):
+        """获取当前小说项目"""
+        return self._novel
+
+    @property
+    def state(self) -> Dict[str, Any]:
+        """获取当前状态"""
+        return self._novel.load_state()
 
     @property
     def config(self) -> Dict[str, Any]:
-        if self._unified is None:
-            self.load()
-        return self._unified or {}
+        """获取小说配置"""
+        return self._novel.load_config()
 
     def load(self) -> Dict[str, Any]:
-        generation_data = self.generation_manager.load()
-        session_state = self.session_manager.load()
+        """加载完整配置"""
+        novel_config = self._novel.load_config()
+        state_data = self._novel.load_state()
+        gen_config = self._novel.load_generation_config()
 
-        merged = {
-            "generation": generation_data.get("generation", {}),
-            "roles": generation_data.get("roles", {}),
-            "providers": generation_data.get("providers", {}),
-            "session": session_state.to_dict(),
+        # 获取API配置
+        api_ref = novel_config.get("api_config_ref", "")
+        api_config = {}
+        if api_ref:
+            api_config = self._api_manager.get_config(api_ref) or {}
+
+        return {
+            "novel": novel_config,
+            "state": state_data,
+            "generation": gen_config,
+            "api": api_config,
         }
 
-        self._unified = merged
-        return merged
-
     def save(self) -> bool:
-        if self._unified is None:
-            self.load()
-
-        unified = self._unified or {}
-        ok_generation = self._save_generation_from_unified(unified)
-        ok_session = self._save_session_from_unified(unified)
-        return ok_generation and ok_session
-
-    def _save_generation_from_unified(self, unified: Dict[str, Any]) -> bool:
-        current = self.generation_manager.load()
-        payload = copy.deepcopy(current)
-
-        payload["generation"] = unified.get("generation", payload.get("generation", {}))
-        payload["roles"] = unified.get("roles", payload.get("roles", {}))
-        payload["providers"] = unified.get("providers", payload.get("providers", {}))
-
-        return self.generation_manager.save(payload)
-
-    def _save_session_from_unified(self, unified: Dict[str, Any]) -> bool:
-        session_payload = unified.get("session", {})
-        if session_payload:
-            self.session_manager._state = SessionState.from_dict(session_payload)
-
-        return self.session_manager.save()
-
-    def get_role_config(self, role_name: str) -> Dict[str, Any]:
-        roles = self.config.get("roles")
-        if not roles:
-            roles = self.generation_manager.get_all_roles_config()
-        return roles.get(role_name, {})
-
-    def get_all_roles_config(self) -> Dict[str, Any]:
-        return self.config.get("roles", self.generation_manager.get_all_roles_config())
-
-    def set_role_config(self, role_name: str, **kwargs: Any) -> bool:
-        if self._unified is None:
-            self.load()
-
-        roles = self._unified.setdefault("roles", {})
-        base = copy.deepcopy(DEFAULT_CONFIG.get("roles", {}).get(role_name, {}))
-        base.update(roles.get(role_name, {}))
-        base.update(kwargs)
-        roles[role_name] = base
-        return self.save()
+        """保存配置"""
+        # 各组件自行保存
+        return True
 
     def get_api_key(self, provider: str) -> str:
-        api_cfg = self.state.api_config
-        if provider == "doubao":
-            return api_cfg.doubao_api_key
-        if provider == "deepseek":
-            return api_cfg.deepseek_api_key
+        """获取API密钥"""
+        novel_config = self._novel.load_config()
+        api_ref = novel_config.get("api_config_ref", "")
+
+        if api_ref:
+            api_config = self._api_manager.get_config(api_ref)
+            if api_config and api_config.get("provider") == provider:
+                return api_config.get("api_key", "")
         return ""
 
+    def get_novel_paths(self) -> Dict[str, Path]:
+        """获取当前小说的各目录路径"""
+        return self._novel.get_paths()
+
+    def get_source_path(self, filename: str) -> Path:
+        """获取素材文件路径"""
+        return self._novel.source_dir / filename
+
+    def get_outline_path(self, filename: str) -> Path:
+        """获取大纲文件路径"""
+        return self._novel.outline_dir / filename
+
+    def get_draft_path(self, filename: str) -> Path:
+        """获取正文文件路径"""
+        return self._novel.draft_dir / filename
+
     def get_api_config(self) -> Dict[str, Any]:
-        config = self.session_manager.get_api_config()
-        generation_cfg = self.config.get("generation", {})
-        roles_cfg = self.config.get("roles", {})
+        """获取API配置"""
+        novel_config = self._novel.load_config()
+        api_ref = novel_config.get("api_config_ref", "")
 
-        config["ai_roles"] = roles_cfg or config.get("ai_roles", {})
-        config.setdefault("novel_generation", {})
-        config["novel_generation"]["context_chapters"] = generation_cfg.get(
-            "context_chapters",
-            config["novel_generation"].get("context_chapters", 10),
-        )
-        config["novel_generation"]["default_word_count"] = generation_cfg.get(
-            "default_word_count",
-            config["novel_generation"].get("default_word_count", 1500),
-        )
+        if api_ref:
+            api_config = self._api_manager.get_config(api_ref)
+            if api_config:
+                # Convert APIConfig dataclass to dict
+                config = vars(api_config).copy()
+                gen_config = self._novel.load_generation_config()
 
-        return config
+                # 从API配置获取provider和model，设置ai_roles
+                provider = api_config.provider
+                model = api_config.models.get("expansion_model", "") if api_config.models else ""
+                if not model:
+                    model = "deepseek-chat" if provider == "deepseek" else "doubao-seed-2-0-lite-260215"
+
+                # 兼容 multi_model_client 的字段命名
+                if provider == "deepseek":
+                    config["deepseek_api_key"] = api_config.api_key
+                    config["deepseek_api_base_url"] = api_config.api_base_url
+                    config["deepseek_models"] = api_config.models
+                elif provider == "doubao":
+                    config["doubao_api_key"] = api_config.api_key
+                    config["doubao_api_base_url"] = api_config.api_base_url
+                    config["doubao_models"] = api_config.models
+
+                config["ai_roles"] = {
+                    "generator": {
+                        "provider": provider,
+                        "model": model,
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "max_tokens": 8000,
+                        "system_prompt": "你是一个专业的网络小说作家，擅长根据大纲创作引人入胜的章节内容。",
+                        "enabled": True,
+                    }
+                }
+
+                config.setdefault("novel_generation", {})
+                config["novel_generation"]["context_chapters"] = gen_config.get(
+                    "context_chapters", 10
+                )
+                config["novel_generation"]["default_word_count"] = gen_config.get(
+                    "default_word_count", 1500
+                )
+                return config
+
+        return {}
 
     def get_generation_config(self) -> Dict[str, Any]:
-        return self.config.get("generation", self.generation_manager.get_generation_config())
+        """获取生成配置"""
+        return self._novel.load_generation_config()
 
     def set_generation_config(self, **kwargs: Any) -> bool:
-        if self._unified is None:
-            self.load()
-
-        generation = self._unified.setdefault("generation", {})
-        generation.update(kwargs)
-        return self.save()
-
-    def set_api_config(
-        self,
-        provider: str,
-        api_key: str,
-        api_base_url: Optional[str] = None,
-        models: Optional[Dict[str, str]] = None,
-    ) -> bool:
-        return self.session_manager.set_api_config(
-            provider=provider,
-            api_key=api_key,
-            api_base_url=api_base_url,
-            models=models,
-        )
-
-    def get_continue_info(self, action: str = "draft") -> Dict[str, Any]:
-        return self.session_manager.get_continue_info(action)
+        """设置生成配置"""
+        current = self._novel.load_generation_config()
+        current.update(kwargs)
+        return self._novel.save_generation_config(current)
 
     def update_progress(
         self,
@@ -153,40 +167,126 @@ class ConfigManager:
         end_chapter: int,
         outline_file: Optional[str] = None,
     ) -> bool:
-        return self.session_manager.update_progress(
-            action=action,
-            start_chapter=start_chapter,
-            end_chapter=end_chapter,
-            outline_file=outline_file,
-        )
+        """更新进度"""
+        state = self._novel.load_state()
 
-    def add_session_record(
-        self,
-        action: str,
-        start_chapter: int,
-        end_chapter: int,
-        model_used: str = "",
-        success: bool = True,
-        error_message: str = "",
-    ) -> bool:
-        return self.session_manager.add_session_record(
-            action=action,
-            start_chapter=start_chapter,
-            end_chapter=end_chapter,
-            model_used=model_used,
-            success=success,
-            error_message=error_message,
-        )
+        if action == "draft":
+            state["last_draft_chapter"] = end_chapter
+        elif action == "outline":
+            state["last_outline_chapter"] = end_chapter
+
+        if outline_file:
+            state["outline_file"] = outline_file
+
+        state["last_session_at"] = __import__("datetime").datetime.now().isoformat()
+
+        return self._novel.save_state(state)
+
+    def get_continue_info(self, action: str = "draft") -> Dict[str, Any]:
+        """获取续写信息"""
+        state = self._novel.load_state()
+        novel_config = self._novel.load_config()
+
+        if action == "draft":
+            last_chapter = state.get("last_draft_chapter", 0)
+        else:
+            last_chapter = state.get("last_outline_chapter", 0)
+
+        total = state.get("total_chapters", 0)
+        next_chapter = last_chapter + 1 if last_chapter > 0 else 1
+
+        return {
+            "last_chapter": last_chapter,
+            "next_chapter": next_chapter,
+            "total_chapters": total,
+            "progress_percent": (last_chapter / total * 100) if total > 0 else 0,
+            "outline_file": state.get("outline_file", ""),
+            "can_continue": last_chapter > 0 and (total == 0 or last_chapter < total),
+        }
 
     def get_status_summary(self) -> Dict[str, Any]:
-        return self.session_manager.get_status_summary()
+        """获取状态摘要"""
+        state = self._novel.load_state()
+        novel_config = self._novel.load_config()
+
+        return {
+            "project_name": novel_config.get("name", self.novel_id),
+            "created_at": novel_config.get("created_at", ""),
+            "updated_at": novel_config.get("updated_at", ""),
+            "api_configured": bool(novel_config.get("api_config_ref", "")),
+            "total_chapters": state.get("total_chapters", 0),
+            "last_outline": state.get("last_outline_chapter", 0),
+            "last_draft": state.get("last_draft_chapter", 0),
+            "outline_file": state.get("outline_file", ""),
+            "session_count": 0,  # 新架构暂不支持
+        }
+
+    def set_chapter_state(self, chapter_num: int, state: str) -> bool:
+        """设置章节状态"""
+        state_data = self._novel.load_state()
+        chapter_states = state_data.get("chapter_states", {})
+        chapter_states[str(chapter_num)] = state
+        state_data["chapter_states"] = chapter_states
+        return self._novel.save_state(state_data)
+
+    def add_session_record(self, **kwargs) -> bool:
+        """添加会话记录（新架构暂不支持，保留接口）"""
+        # 新架构暂不支持会话记录，仅更新最后会话时间
+        state = self._novel.load_state()
+        state["last_session_at"] = __import__("datetime").datetime.now().isoformat()
+        return self._novel.save_state(state)
+
+    def mark_dirty_cascade(self, chapter_num: int, draft_window: int) -> int:
+        """标记级联dirty章节，返回影响的章节数"""
+        state = self._novel.load_state()
+        chapter_states = state.get("chapter_states", {})
+
+        count = 0
+        for i in range(1, draft_window + 1):
+            affected_chapter = chapter_num + i
+            ch_key = str(affected_chapter)
+            if ch_key in chapter_states:
+                chapter_states[ch_key] = "dirty"
+                count += 1
+
+        state["chapter_states"] = chapter_states
+        self._novel.save_state(state)
+        return count
+
+    def get_first_dirty_chapter(self) -> int:
+        """获取第一个dirty章节，返回章节号或0"""
+        state = self._novel.load_state()
+        chapter_states = state.get("chapter_states", {})
+
+        dirty_chapters = [int(k) for k, v in chapter_states.items() if v == "dirty"]
+        return min(dirty_chapters) if dirty_chapters else 0
+
+    def get_chapter_state(self, chapter_num: int) -> str:
+        """获取章节状态"""
+        state = self._novel.load_state()
+        chapter_states = state.get("chapter_states", {})
+        return chapter_states.get(str(chapter_num), "clean")
+
+    def get_chapter_states_summary(self) -> Dict[str, int]:
+        """获取章节状态统计"""
+        state = self._novel.load_state()
+        chapter_states = state.get("chapter_states", {})
+
+        return {
+            "clean": sum(1 for v in chapter_states.values() if v == "clean"),
+            "dirty": sum(1 for v in chapter_states.values() if v == "dirty"),
+            "cosmetic": sum(1 for v in chapter_states.values() if v == "cosmetic"),
+            "total": len(chapter_states),
+        }
 
 
-def get_config_manager(project_root: str = ".") -> ConfigManager:
-    return ConfigManager(project_root)
+def get_config_manager(project_root: str = ".", novel_id: Optional[str] = None) -> ConfigManager:
+    """获取配置管理器实例"""
+    return ConfigManager(project_root, novel_id)
 
 
 def dump_json(path: Path, payload: Dict[str, Any]) -> None:
+    """保存JSON文件"""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)

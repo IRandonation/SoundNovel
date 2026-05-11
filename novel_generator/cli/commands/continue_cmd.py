@@ -12,7 +12,6 @@ from typing import Optional
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from novel_generator.config.config_manager import ConfigManager
 from novel_generator.core.chapter_expander import (
     ChapterExpander,
     _build_outline_context,
@@ -26,7 +25,7 @@ from novel_generator.utils.common import (
 )
 from novel_generator.cli.utils import (
     print_success, print_error, print_info, print_warning,
-    setup_cli_logging
+    setup_cli_logging, get_config_manager
 )
 from novel_generator.core.ai_roles import AIRole
 
@@ -34,12 +33,11 @@ from novel_generator.core.ai_roles import AIRole
 def run(args: argparse.Namespace) -> int:
     logger = setup_cli_logging()
 
-    config_manager = ConfigManager(str(Path.cwd()))
-    session_mgr = config_manager.session_manager
+    config_manager = get_config_manager(novel_id=getattr(args, 'novel_id', None))
     gen_config = config_manager.get_generation_config()
 
     # 检查是否有 dirty 章节
-    first_dirty = session_mgr.get_first_dirty_chapter()
+    first_dirty = config_manager.get_first_dirty_chapter()
     if first_dirty > 0 and args.cascade:
         start_chapter = first_dirty
         print_info(f"级联模式: 从第 {first_dirty} 章（dirty）开始重生成")
@@ -61,7 +59,9 @@ def run(args: argparse.Namespace) -> int:
 
         start_chapter = continue_info["next_chapter"]
 
-    total_chapters = config_manager.state.generation_state.total_chapters
+    # Get state dict
+    state = config_manager.state
+    total_chapters = state.get("total_chapters", 0)
 
     if args.end:
         end_chapter = args.end
@@ -80,10 +80,10 @@ def run(args: argparse.Namespace) -> int:
     if args.dry_run:
         print_info("=== 干运行模式 ===")
         print_info(f"将生成章节: 第{start_chapter}章 - 第{end_chapter}章 ({len(chapters_to_generate)}章)")
-        dirty_list = [ch for ch in chapters_to_generate if session_mgr.get_chapter_state(ch) == "dirty"]
+        dirty_list = [ch for ch in chapters_to_generate if config_manager.get_chapter_state(ch) == "dirty"]
         if dirty_list:
             print_warning(f"其中 dirty 章节: {dirty_list}")
-        state_summary = session_mgr.get_chapter_states_summary()
+        state_summary = config_manager.get_chapter_states_summary()
         print_info(f"章节状态统计: clean={state_summary['clean']}, dirty={state_summary['dirty']}, cosmetic={state_summary['cosmetic']}")
         return 0
 
@@ -92,7 +92,9 @@ def run(args: argparse.Namespace) -> int:
 
     config = config_manager.get_api_config()
 
-    outline_file = config_manager.state.generation_state.outline_file
+    # Get outline file from state
+    state = config_manager.state
+    outline_file = state.get("outline_file", "")
     if not outline_file:
         outline_file = get_latest_outline_file()
 
@@ -124,10 +126,10 @@ def run(args: argparse.Namespace) -> int:
     outline_window = gen_config.get("outline_window", 30)
     draft_window = gen_config.get("draft_window", 10)
 
-    draft_dir = config.get('paths', {}).get('draft_dir', 'user/output/draft/')
-    if not Path(draft_dir).is_absolute():
-        draft_dir = str(Path.cwd() / draft_dir)
-    Path(draft_dir).mkdir(parents=True, exist_ok=True)
+    # Use novel paths
+    novel_paths = config_manager.get_novel_paths()
+    draft_dir = novel_paths["draft_dir"]
+    draft_dir.mkdir(parents=True, exist_ok=True)
 
     success_count = 0
     fail_count = 0
@@ -155,7 +157,7 @@ def run(args: argparse.Namespace) -> int:
 
             expander.save_chapter(ch_num, content, draft_dir)
 
-            session_mgr.set_chapter_state(ch_num, "clean")
+            config_manager.set_chapter_state(ch_num, "clean")
 
             config_manager.update_progress("draft", start_chapter, ch_num, str(outline_file))
 

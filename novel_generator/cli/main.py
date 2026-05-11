@@ -2,7 +2,6 @@
 SoundNovel CLI 主入口
 
 统一命令行接口，支持:
-- init: 初始化项目
 - outline: 生成章节大纲
 - expand: 扩写章节内容
 - continue: 续写章节
@@ -10,6 +9,8 @@ SoundNovel CLI 主入口
 - settings: 配置AI角色和设置
 - touch: 标记章节修改类型
 - regenerate: 重生成指定章节
+- api: 管理API配置
+- novel: 管理小说项目
 """
 
 import argparse
@@ -22,6 +23,13 @@ sys.path.insert(0, str(project_root))
 
 from novel_generator.cli import commands
 from novel_generator.cli.utils import setup_cli_logging
+from novel_generator.cli.commands.api_commands import (
+    api_list, api_create, api_use, api_test, api_delete, api_edit
+)
+from novel_generator.cli.commands.novel_commands import (
+    novel_list, novel_create, novel_switch, novel_rename,
+    novel_delete, novel_info, novel_export, novel_import
+)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -32,14 +40,25 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
-  %(prog)s init                    初始化新项目
-  %(prog)s outline                 生成章节大纲
-  %(prog)s expand --chapter 1      扩写第1章
-  %(prog)s expand --start 1 --end 10   扩写第1-10章
-  %(prog)s continue                续写章节
-  %(prog)s status                  查看项目状态
+  %(prog)s novel create              创建新小说项目
+  %(prog)s novel list                列出所有小说
+  %(prog)s novel switch <id>         切换当前小说
+  %(prog)s novel info                查看当前小说信息
+
+  %(prog)s api create                创建API配置
+  %(prog)s api list                  列出API配置
+  %(prog)s api use <id>              设置默认API
+
+  %(prog)s outline                   生成章节大纲
+  %(prog)s expand --chapter 1        扩写第1章
+  %(prog)s expand --start 1 --end 10 扩写第1-10章
+  %(prog)s continue                  续写章节
+  %(prog)s status                    查看项目状态
   %(prog)s touch --chapter 15 --type content  标记章节修改
   %(prog)s regenerate --chapters 12-14        重生成章节
+
+全局选项:
+  --novel <id>                       指定小说ID（使用默认配置时）
 
 更多信息:
   查看 README.md 获取详细使用指南
@@ -57,6 +76,13 @@ def create_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='显示详细日志'
     )
+    parser.add_argument(
+        '--novel',
+        dest='novel_id',
+        type=str,
+        default=None,
+        help='指定小说ID（可选，默认使用当前小说）'
+    )
 
     # 子命令
     subparsers = parser.add_subparsers(
@@ -64,29 +90,6 @@ def create_parser() -> argparse.ArgumentParser:
         title='可用命令',
         help='使用 %(prog)s <command> -h 查看命令帮助'
     )
-
-    # init 命令
-    init_parser = subparsers.add_parser(
-        'init',
-        help='初始化小说项目',
-        description='创建项目目录结构和示例文件'
-    )
-    init_parser.add_argument(
-        '--force', '-f',
-        action='store_true',
-        help='强制覆盖已有文件'
-    )
-    init_parser.add_argument(
-        '--project-root',
-        type=str,
-        help='项目根目录路径（默认: 当前目录）'
-    )
-    init_parser.add_argument(
-        '--skip-config',
-        action='store_true',
-        help='跳过交互式 API 配置向导'
-    )
-    init_parser.set_defaults(func=commands.init)
 
     # outline 命令
     outline_parser = subparsers.add_parser(
@@ -97,8 +100,8 @@ def create_parser() -> argparse.ArgumentParser:
     outline_parser.add_argument(
         '--config', '-c',
         type=str,
-        default='user/config/session.json',
-        help='配置文件路径（默认: user/config/session.json）'
+        default=None,
+        help='配置文件路径（已废弃，配置现在存储在novels/<novel>/config/）'
     )
     outline_parser.add_argument(
         '--output', '-o',
@@ -138,8 +141,8 @@ def create_parser() -> argparse.ArgumentParser:
     expand_parser.add_argument(
         '--config', '-c',
         type=str,
-        default='user/config/session.json',
-        help='配置文件路径（默认: user/config/session.json）'
+        default=None,
+        help='配置文件路径（已废弃，配置现在存储在novels/<novel>/config/）'
     )
     expand_parser.add_argument(
         '--outline-file', '-f',
@@ -283,6 +286,14 @@ def create_parser() -> argparse.ArgumentParser:
 
     from novel_generator.cli.commands.settings_cmd import add_parser as add_settings_parser
     add_settings_parser(subparsers)
+
+    # api 命令
+    from novel_generator.cli.commands.api_commands import add_parser as add_api_parser
+    add_api_parser(subparsers)
+
+    # novel 命令
+    from novel_generator.cli.commands.novel_commands import add_parser as add_novel_parser
+    add_novel_parser(subparsers)
 
     return parser
 

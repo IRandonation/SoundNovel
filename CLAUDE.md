@@ -38,8 +38,8 @@ uv run pytest --cov=novel_generator --cov-report=html
 ### 运行应用
 
 ```bash
-# CLI 模式 - 初始化项目
-uv run soundnovel.py cli init
+# CLI 模式 - 创建新小说
+uv run soundnovel.py novel create
 
 # CLI 模式 - 生成章节大纲
 uv run soundnovel.py cli outline

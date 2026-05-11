@@ -1,17 +1,38 @@
 import yaml
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 
 
 class PromptManager:
-    DEFAULT_PROMPT_DIR = "user/prompts"
+    """提示词管理器（新架构版本）"""
 
-    def __init__(self, project_root: str = "."):
+    def __init__(self, project_root: str = ".", novel_id: Optional[str] = None):
+        """
+        初始化提示词管理器
+
+        Args:
+            project_root: 项目根目录
+            novel_id: 小说ID（可选，默认使用当前小说）
+        """
+        from novel_generator.utils.common import get_current_novel_id, get_current_novel_paths
+
         self.project_root = Path(project_root).resolve()
-        self.prompt_dir = self.project_root / self.DEFAULT_PROMPT_DIR / "prompts"
-        self.tracking_dir = self.project_root / self.DEFAULT_PROMPT_DIR / "tracking"
         self.logger = logging.getLogger(__name__)
+
+        # 确定小说ID
+        if novel_id is None:
+            novel_id = get_current_novel_id(self.project_root)
+
+        # 获取小说路径
+        if novel_id:
+            paths = get_current_novel_paths(self.project_root)
+            if paths:
+                self.prompt_dir = paths.get("prompts_dir", self.project_root / "novels" / novel_id / "prompts")
+            else:
+                self.prompt_dir = self.project_root / "novels" / novel_id / "prompts"
+        else:
+            self.prompt_dir = self.project_root / "prompts"
 
         self._system_prompts = None
         self._generation_prompts = None

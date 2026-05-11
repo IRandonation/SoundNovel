@@ -38,6 +38,7 @@ from novel_generator.cli.utils import (
     print_info,
     print_warning,
     setup_cli_logging,
+    get_config_manager,
 )
 from novel_generator.core.ai_roles import AIRole
 
@@ -48,7 +49,7 @@ def run(args: argparse.Namespace) -> int:
     print_info("开始章节扩写...")
 
     try:
-        config_manager = ConfigManager(str(Path.cwd()))
+        config_manager = get_config_manager(novel_id=getattr(args, 'novel_id', None))
 
         if args.from_last:
             continue_info = config_manager.get_continue_info("draft")
@@ -78,7 +79,9 @@ def run(args: argparse.Namespace) -> int:
         settings = Settings(config)
         settings.validate()
 
-        outline_file_from_session = config_manager.state.generation_state.outline_file
+        # Get state dict instead of SessionState object
+        state = config_manager.state
+        outline_file_from_session = state.get("outline_file", "")
 
         if args.outline_file:
             outline_file = Path(args.outline_file)
@@ -181,12 +184,10 @@ def run(args: argparse.Namespace) -> int:
             batch_size = args.batch_size or gen_config.get("batch_size", 10)
             print_info(f"启用批量生成模式，批次大小: {batch_size}")
 
-        draft_dir = config.get("paths", {}).get("draft_dir", "user/output/draft/")
-        if not Path(draft_dir).is_absolute():
-            draft_dir = str(Path.cwd() / draft_dir)
-        Path(draft_dir).mkdir(parents=True, exist_ok=True)
-
-        session_mgr = config_manager.session_manager
+        # Use novel's draft path instead of old config path
+        novel_paths = config_manager.get_novel_paths()
+        draft_dir = novel_paths["draft_dir"]
+        draft_dir.mkdir(parents=True, exist_ok=True)
 
         success_count = 0
         fail_count = 0
@@ -210,7 +211,7 @@ def run(args: argparse.Namespace) -> int:
                 for ch_num, content in results.items():
                     try:
                         expander.save_chapter(ch_num, content, draft_dir)
-                        session_mgr.set_chapter_state(ch_num, "clean")
+                        config_manager.set_chapter_state(ch_num, "clean")
                         config_manager.update_progress(
                             "draft", actual_start, ch_num, str(outline_file)
                         )
@@ -253,7 +254,7 @@ def run(args: argparse.Namespace) -> int:
                     expander.save_chapter(ch_num, content, draft_dir)
 
                     # 标记章节为 clean
-                    session_mgr.set_chapter_state(ch_num, "clean")
+                    config_manager.set_chapter_state(ch_num, "clean")
 
                     config_manager.update_progress(
                         "draft", actual_start, ch_num, str(outline_file)

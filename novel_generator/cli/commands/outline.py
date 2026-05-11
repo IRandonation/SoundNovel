@@ -15,14 +15,12 @@ sys.path.insert(0, str(project_root))
 
 from novel_generator.core.outline_generator import OutlineGenerator
 from novel_generator.config.settings import Settings
-from novel_generator.config.config_manager import ConfigManager
 from novel_generator.utils.common import (
-    load_config, load_core_setting, load_overall_outline,
     get_project_root, ensure_directories
 )
 from novel_generator.cli.utils import (
     print_success, print_error, print_info, print_warning,
-    setup_cli_logging
+    setup_cli_logging, get_config_manager
 )
 
 
@@ -41,31 +39,45 @@ def run(args: argparse.Namespace) -> int:
     print_info("开始两阶段大纲生成（幕规划 → 章骨架）...")
 
     try:
-        config = load_config(args.config)
-        print_info("配置加载完成")
+        config_manager = get_config_manager(novel_id=getattr(args, 'novel_id', None))
+        gen_config = config_manager.get_generation_config()
 
-        config_manager = ConfigManager(str(get_project_root()))
-        gen_config = config_manager.state.generation_config
+        # Load source files from novel
+        paths = config_manager.get_novel_paths()
+        core_setting_path = paths["core_setting"]
+        overall_outline_path = paths["overall_outline"]
 
-        settings = Settings(config)
-        settings.validate()
+        # Load source content
+        import yaml
+        if core_setting_path.exists():
+            with open(core_setting_path, "r", encoding="utf-8") as f:
+                core_setting = yaml.safe_load(f) or {}
+        else:
+            core_setting = {}
 
-        core_setting = load_core_setting()
-        overall_outline = load_overall_outline()
+        if overall_outline_path.exists():
+            with open(overall_outline_path, "r", encoding="utf-8") as f:
+                overall_outline = yaml.safe_load(f) or {}
+        else:
+            overall_outline = {}
 
         if not core_setting:
-            print_error("核心设定为空，请先填写 user/source/core_setting.yaml")
+            print_error("核心设定为空，请先填写 source/core_setting.yaml")
             return 1
 
         if not overall_outline:
-            print_error("整体大纲为空，请先填写 user/source/overall_outline.yaml")
+            print_error("整体大纲为空，请先填写 source/overall_outline.yaml")
             return 1
 
         print_info("核心设定和整体大纲加载完成")
 
-        ensure_directories()
+        # Use API config for settings
+        api_config = config_manager.get_api_config()
+        settings = Settings(api_config)
+        settings.validate()
 
-        outline_gen = OutlineGenerator(config)
+        # Initialize outline generator with novel paths
+        outline_gen = OutlineGenerator(api_config, output_dir=paths["outline_dir"])
 
         total_chapters = outline_gen.extract_total_chapters(overall_outline)
         print_info(f"检测到总章节数: {total_chapters}")

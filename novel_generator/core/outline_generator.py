@@ -109,19 +109,48 @@ class ActLevelPlanner:
         act_structure: List[Dict[str, Any]],
         num_acts: int,
     ) -> str:
-        """构建一次性全部幕规划的Prompt"""
-        template_path = Path("user/prompts/outline_generation.yaml")
-        template_data = {}
-        if template_path.exists():
-            with open(template_path, "r", encoding="utf-8") as f:
-                template_data = yaml.safe_load(f)
+        """构建一次性全部幕规划的Prompt（硬编码模板）"""
 
-        template_str = template_data.get("templates", {}).get(
-            "act_level_planning", {}
-        ).get("template", "")
+        # 硬编码的幕级规划模板
+        template_str = """【任务】基于核心设定和整体大纲，生成全部{num_acts}幕的详细规划
 
-        if not template_str:
-            raise RetryableGenerationError("幕级规划模板为空，请检查 user/prompts/outline_generation.yaml")
+【核心设定】
+{core_setting}
+
+【整体故事大纲】
+{overall_story}
+
+【幕结构信息】
+{act_structure_info}
+
+【规划规则】
+{planning_rules}
+
+【输出格式】
+请按JSON格式输出全部{num_acts}幕的规划，确保各幕之间剧情连贯、节奏合理：
+
+{{
+  "幕规划": [
+    {{
+      "幕号": 1,
+      "幕名": "第一幕名称",
+      "章节范围": "第1-15章",
+      "核心冲突": "本幕核心矛盾",
+      "剧情概要": "本幕主要剧情发展",
+      "爽点/爆点设计": ["设计点1", "设计点2"],
+      "关键场景": ["场景1", "场景2", "场景3"],
+      "情绪曲线": "起-承-转-合设计",
+      "伏笔设置": ["伏笔1: 第X章回收"],
+      "与下幕衔接": "如何自然过渡到下一幕"
+    }}
+  ]
+}}
+
+要求：
+1. 严格遵循网文节奏设计原则
+2. 确保各幕剧情连贯，无明显断层
+3. 自然融入爽点/爆点设计，不刻意
+4. 每个幕的章节范围要合理分配"""
 
         # 源材料
         core_setting_text = yaml.dump(core_setting, allow_unicode=True, default_flow_style=False)
@@ -687,7 +716,7 @@ class OutlineGenerator:
     """大纲生成器（两阶段：幕规划 → 章骨架，骨架直接驱动扩写）"""
 
     def __init__(
-        self, config: Dict[str, Any], multi_model_client: MultiModelClient = None
+        self, config: Dict[str, Any], multi_model_client: MultiModelClient = None, output_dir: Optional[Path] = None
     ):
         self.config = config
         self.settings = Settings(config)
@@ -699,7 +728,11 @@ class OutlineGenerator:
 
         self.ai_role_manager = AIRoleManager(config, self.multi_model_client)
 
-        self.output_dir = Path("user/output/outline")
+        if output_dir:
+            self.output_dir = output_dir
+        else:
+            # 默认使用当前目录（调用者应传入正确路径）
+            self.output_dir = Path(".")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.act_plan_file = self.output_dir / "act_plan.json"

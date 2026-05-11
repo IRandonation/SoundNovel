@@ -1,188 +1,272 @@
 # SoundNovel - AI辅助小说创作工具
 
-一个基于多模型大语言模型的长篇小说创作助手，采用**"大纲即剧本"**的先进架构，实现爽点的工程化控制，帮助你从核心设定到成书的高效创作。
+一个基于多模型大语言模型的长篇小说创作助手，采用**三板块架构**（API板块 + 资源板块 + 逻辑板块），支持多小说项目管理，帮助你从核心设定到成书的高效创作。
 
 ## 核心特性
 
-### 1. 三阶段大纲生成（场景级剧本）
-
-不同于传统的"简单概要→AI自由发挥"，我们采用**剧本式大纲**：
+### 1. 三板块架构
 
 ```
-幕级规划（爽点战略布局）
-    ↓
-章级骨架（功能标记+约束）
-    ↓
-场景级剧本（节拍设计+对白+感官细节）
-    ↓
-扩写（纯执行，无需创意决策）
+┌─────────────────────────────────────────────────────────────┐
+│                      SoundNovel                              │
+├──────────────┬─────────────────────┬────────────────────────┤
+│  API板块      │   资源板块           │     逻辑板块            │
+│  api/         │   novels/           │     novel_generator/   │
+├──────────────┼─────────────────────┼────────────────────────┤
+│ • 多API配置   │ • 多小说项目管理     │ • 大纲生成逻辑          │
+│ • 豆包/DeepSeek│ • 独立source/outline │ • 章节扩写逻辑          │
+│ • 配置复用   │ • 独立prompts       │ • 状态管理              │
+│               │ • 独立draft/logs    │ • CLI命令              │
+└──────────────┴─────────────────────┴────────────────────────┘
 ```
 
-**优势**：
-- 大纲即剧本，人工可精细调整每个场景
-- 扩写阶段零创意负担，质量稳定可控
-- API调用减少50%（从10+次/章降至5次/章）
+**优势**:
+- **API板块独立**: 一次配置，多小说复用
+- **资源隔离**: 每个小说完全独立，互不干扰
+- **逻辑复用**: 核心生成逻辑统一维护
 
-### 2. 爽点工程化
+### 2. 两阶段流水线架构
 
-**6种爽点类型**，每种都有标准元素清单和节拍结构：
-
-| 类型 | 核心元素 | 经典节奏 |
-|------|---------|---------|
-| **打脸** | 反派嚣张→主角隐忍→反转触发→实力展现→震惊反应→后续收益 | 3章一小爽，幕末一大爽 |
-| **实力提升** | 困境/机缘→努力/顿悟→突破/获得→展现实力→地位提升 | 幕中突破，幕末质变 |
-| **揭秘** | 悬念累积→线索汇集→真相大白→连锁反应 | 幕末揭秘，全书高潮 |
-| **收获** | 发现目标→克服困难→成功获得→意外之喜 | 穿插分布 |
-| **情感** | 情感积累→关系突破→情感确认→温暖满足 | 人物关系转折点 |
-| **地位跃升** | 被轻视→展现实力→被认可→进入新层级 | 阶段跨越时刻 |
-
-**爽点节奏自动计算**：
-- 每3-4章：小爽点（强度5-6）
-- 幕中：中爆点（强度7-8）
-- 幕末：大爆点（强度9-10）
-- 低谷期待期：情绪3-4（不能连续爽）
-
-### 3. 编码质量检查（零API成本）
-
-90%的检查通过编码实现，无需API调用：
-
-- **爽点完整性检查**：正则匹配6大元素
-- **连续性检查**：根据大纲标记智能判断（支持多线叙事）
-- **禁忌词检测**：实时正则匹配
-- **重复词检测**：滑动窗口统计
-
-### 4. 多线叙事支持
-
-通过大纲标记避免连续性误报：
-
-```yaml
-约束标记:
-  continuity_required: false  # 新线场景，不检查连续性
-  narrative_line: B线         # 叙事线标识
-  setup_required: true        # 需要检查Setup完整性
+```
+大纲生成阶段
+    ├── 幕级规划（注入网文节奏设计原则）
+    └── 章级骨架（章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
+            ↓
+章节扩写阶段（上下文注入）
+    ├── 前30章大纲上下文（骨架级摘要）
+    ├── 前10章正文全文（原文注入）
+    └── 当前章完整骨架
+            ↓
+    每章一次API调用，AI自然处理场景间过渡与节奏
 ```
 
-## 架构对比
+### 3. 上下文注入系统
 
-| 维度 | 传统架构 | SoundNovel新架构 |
-|------|---------|-----------------|
-| 大纲详细度 | 6字段概要 | 场景级剧本（节拍+对白+感官） |
-| 爽点控制 | 随机出现 | 按节奏规划（工程化） |
-| 扩写复杂度 | 高（AI决定情节+文笔） | 低（纯执行，按剧本） |
-| API调用/章 | 10+次（生成→润色→评审循环） | 5次（幕→章→场景） |
-| 上下文注入 | 2000+ tokens（大量追踪） | 500 tokens（精简剧本） |
-| 人工干预 | 难（只能重试扩写） | 易（改大纲即可） |
-| 质量检查 | 依赖评审者（API） | 编码检查（毫秒级） |
+章节扩写时，prompt由三部分组成：
+
+- **前30章大纲上下文**: 骨架级摘要保证宏观连续性和伏笔贯通
+- **前10章正文全文**: 原文注入不做摘要，保证文风、语气、细节的连贯
+- **当前章完整骨架**: 章节定位/核心事件/因果链/场景概览/情绪曲线/结尾卡点
+
+上下文窗口参数: `outline_window`（默认30）、`draft_window`（默认10）。
+
+### 4. 章节状态系统
+
+每章维护三种状态，智能管理重生成：
+
+- **clean**: 正文与大纲一致
+- **dirty**: 正文需要重生成（前文变更导致上下文变化）
+- **cosmetic**: 仅润色修改，不触发级联
+
+`touch`命令标记修改类型，`content`类型触发脏传播（N+1到N+draft_window标记为dirty）。
+
+### 5. 多模型支持
+
+支持豆包和DeepSeek API，可在API板块中配置多个服务商，在创建小说时选择使用。
+
+---
 
 ## 目录结构
 
 ```
 SoundNovel/
-├── user/source/                    # 【用户提供】核心素材与设定
-│   ├── core_setting.yaml         # 世界观、人物、伏笔
-│   └── overall_outline.yaml      # 幕结构、核心剧情脉络
-├── user/output/outline/                   # 【生成】章节大纲
-│   ├── act_plan.yaml            # 幕级规划（含爽点布局）
-│   ├── chapter_skeletons.yaml   # 章级骨架
-│   └── chapter_*.yaml           # 场景级剧本
-├── user/output/draft/                     # 【生成】章节正文
-├── user/prompts/                    # 提示词模板
-│   ├── prompts/
-│   │   ├── outline_generation.yaml      # 三阶段生成Prompt
-│   │   ├── scene_expansion.yaml         # 场景扩写Prompt
-│   │   └── satisfaction_prompts/        # 爽点专用Prompt
-│   │       ├── face_slap.yaml
-│   │       ├── power_up.yaml
-│   │       └── revelation.yaml
-│   └── tracking/                 # 追踪文件
-├── user/config/                    # 配置文件
-│   ├── generation_config.json   # 生成配置
-│   └── session.json             # 会话状态（含API密钥）
-├── user/logs/                       # 【生成】日志目录
-├── novel_generator/              # 核心代码包
-│   ├── cli/                      # CLI命令模块
-│   ├── config/                   # 配置管理
-│   ├── core/                     # 核心逻辑
-│   │   ├── satisfaction_engine.py      # 爽点节奏引擎
-│   │   ├── outline_generator.py        # 三阶段大纲生成
-│   │   ├── scene_expander.py           # 场景级扩写
-│   │   ├── scene_assembler.py          # 场景组装
-│   │   ├── satisfaction_checker.py     # 爽点质量检查（编码）
-│   │   ├── continuity_checker.py       # 连续性检查（编码）
-│   │   └── chapter_expander.py         # 章节扩写（简化版）
-│   └── utils/                    # 通用工具
-├── soundnovel.py                 # 统一入口
-├── build_exe.py                  # 打包脚本
-└── pyproject.toml               # 依赖声明
+├── api/                        # 【API板块】API配置中心
+│   ├── configs/                # API配置存储目录
+│   │   ├── doubao-pro.json     # 豆包配置示例
+│   │   └── deepseek-chat.json  # DeepSeek配置示例
+│   └── manager.py              # APIManager类
+│
+├── novels/                     # 【资源板块】多小说项目目录
+│   └── {novel_id}/             # 单个小说项目（完全隔离）
+│       ├── source/             # 用户小说源材料
+│       │   ├── core_setting.yaml      # 世界观、人物、伏笔设定
+│       │   └── overall_outline.yaml   # 高层故事结构
+│       ├── prompts/            # 小说专属提示词模板
+│       │   ├── system_prompts.yaml    # AI角色定义
+│       │   ├── style_guide.yaml       # 风格指导（需根据小说修改）
+│       │   ├── generation_prompts.yaml # 生成提示词
+│       │   └── satisfaction_prompts/  # 爽点提示词
+│       ├── outline/            # 生成的大纲
+│       ├── draft/              # 章节草稿
+│       ├── logs/               # 生成日志
+│       │   ├── ai_api_logs/
+│       │   └── system_logs/
+│       └── config/             # 小说专属配置
+│           ├── novel.json      # 小说元数据（名称、API引用等）
+│           ├── generation.json   # 生成参数（窗口、字数等）
+│           └── state.json      # 生成状态（进度、章节状态）
+│
+├── novel_generator/            # 【逻辑板块】主Python包
+│   ├── cli/                    # CLI命令
+│   ├── config/                 # 配置管理
+│   ├── core/                   # 核心逻辑（大纲生成、章节扩写）
+│   ├── novel_manager.py        # 小说资源管理器
+│   └── utils/                  # 工具函数
+│
+├── user/                       # 【旧版单小说目录】（保留兼容）
+├── soundnovel.py               # 统一入口
+└── pyproject.toml              # 依赖声明
 ```
+
+---
 
 ## 安装与环境
 
-推荐使用 `uv` 进行依赖管理：
+推荐使用`uv`进行依赖管理：
 
 ```bash
-# 安装 uv
+# 安装uv
 pip install uv
 
 # 同步依赖
 uv sync
 ```
 
+---
+
 ## 使用方式
 
-### CLI 命令行
+### 统一入口
 
 ```bash
 # 使用统一入口
-python soundnovel.py cli <command> [options]
+python soundnovel.py <板块> <命令> [选项]
 
-# 或使用模块方式
-uv run python -m novel_generator.cli <command> [options]
+# 或使用uv运行
+uv run soundnovel.py <板块> <命令> [选项]
 ```
 
-#### 核心命令
+### 三大板块命令
+
+#### 1. API板块命令 (`api`)
+
+管理API服务商配置，支持多配置共存：
 
 ```bash
-# 初始化项目
-python soundnovel.py cli init
+# 列出所有API配置
+uv run soundnovel.py api list
 
-# 三阶段大纲生成
-python soundnovel.py cli outline --stage act      # 幕级规划
-python soundnovel.py cli outline --stage chapter  # 章级骨架
-python soundnovel.py cli outline --stage scene    # 场景级剧本
+# 创建新API配置（交互式）
+uv run soundnovel.py api create
 
-# 扩写章节（基于场景剧本）
-python soundnovel.py cli expand --chapter 1       # 单章
-python soundnovel.py cli expand --start 1 --end 10  # 范围
-python soundnovel.py cli continue                 # 从上次继续
+# 设置默认API配置
+uv run soundnovel.py api use <config_id>
+
+# 测试API连接
+uv run soundnovel.py api test [config_id]
+
+# 删除API配置
+uv run soundnovel.py api delete <config_id>
+
+# 编辑API配置
+uv run soundnovel.py api edit <config_id>
+```
+
+**配置存储**: `api/configs/<config_id>.json`
+
+#### 2. 资源板块命令 (`novel`)
+
+管理多小说项目：
+
+```bash
+# 列出所有小说项目
+uv run soundnovel.py novel list
+
+# 创建新小说（交互式）
+uv run soundnovel.py novel create
+
+# 切换当前小说
+uv run soundnovel.py novel switch <novel_id>
+
+# 查看小说信息
+uv run soundnovel.py novel info [novel_id]
+
+# 重命名小说
+uv run soundnovel.py novel rename <novel_id> <new_name>
+
+# 删除小说（需确认）
+uv run soundnovel.py novel delete <novel_id>
+
+# 导出小说备份
+uv run soundnovel.py novel export <novel_id> [--output <path>]
+
+# 导入小说
+uv run soundnovel.py novel import <zip_path>
+```
+
+**小说存储**: `novels/<novel_id>/`
+
+**当前小说**: 记录在 `novels/.current` 文件中
+
+#### 3. 逻辑板块命令 (`cli`)
+
+执行生成逻辑（操作当前小说或指定--novel）：
+
+```bash
+# 生成大纲（两阶段：幕级规划 + 章级骨架）
+uv run soundnovel.py cli outline
+
+# 扩写章节
+uv run soundnovel.py cli expand --chapter 1       # 单章
+uv run soundnovel.py cli expand --start 1 --end 10  # 范围
+uv run soundnovel.py cli continue                 # 从上次继续
+uv run soundnovel.py cli continue --cascade     # 级联重生成dirty章节
 
 # 查看项目状态
-python soundnovel.py cli status
+uv run soundnovel.py cli status
 
-# 配置AI角色和生成参数
-python soundnovel.py cli settings --interactive
+# 标记章节修改类型
+cosmetic: 仅润色，不触发级联
+uv run soundnovel.py cli touch --chapter 15 --type content
 
-# 查看帮助
-python soundnovel.py --help
-python soundnovel.py cli --help
+# 重生成指定章节
+uv run soundnovel.py cli regenerate --chapters 12-14
+
+# 使用指定小说（不切换当前）
+uv run soundnovel.py cli expand --chapter 1 --novel <novel_id>
 ```
 
-### 快速开始
+---
 
-#### 1. 初始化项目
+## 快速开始
+
+### 1. 配置API
 
 ```bash
-python soundnovel.py cli init
+# 创建豆包API配置
+uv run soundnovel.py api create
+# 按提示输入：配置ID、名称、API Key、模型等
+
+# 或使用现有配置
+# 系统会自动检测 user/config/session.json 中的配置并迁移
 ```
 
-#### 2. 填写小说设定
+### 2. 创建小说
 
-编辑 `user/source/core_setting.yaml`：
+```bash
+uv run soundnovel.py novel create
+
+# 交互式输入：
+# - 小说名称: 我的修仙小说
+# - 描述: 一个逆天改命的故事
+# - 选择API配置: 1 (豆包) 或 2 (DeepSeek)
+```
+
+**创建后自动生成**:
+- `source/core_setting.yaml` - 核心设定模板
+- `source/overall_outline.yaml` - 整体大纲模板
+- `prompts/style_guide.yaml` - 风格指导（需根据小说修改）
+- `prompts/system_prompts.yaml` - AI角色定义
+- `config/*.json` - 配置和状态文件
+
+### 3. 填写小说设定
+
+编辑 `novels/{novel_id}/source/core_setting.yaml`:
 
 ```yaml
 世界观:
-  背景: 修仙世界，宗门林立
-  规则: 灵气修炼，境界划分
+  背景: 修仙世界，宗门林立，灵气充沛
+  规则: 九重境界，每重三阶，突破需渡劫
 
 核心冲突:
   主线: 主角为报灭门之仇踏上修仙路
@@ -191,7 +275,7 @@ python soundnovel.py cli init
 人物小传:
   主角A:
     身份: 没落家族唯一幸存者
-    性格: 隐忍坚韧
+    性格: 隐忍坚韧，杀伐果断
     目标: 复仇+复兴家族
     金手指: 获得上古传承
 
@@ -200,7 +284,7 @@ python soundnovel.py cli init
   - 主角血脉（第10章觉醒，第50章揭示）
 ```
 
-编辑 `user/source/overall_outline.yaml`：
+编辑 `novels/{novel_id}/source/overall_outline.yaml`:
 
 ```yaml
 整体结构:
@@ -211,91 +295,183 @@ python soundnovel.py cli init
   第1幕（崛起）:
     章节范围: 第1-30章
     核心剧情: 主角获得金手指，进入宗门展现实力
+    爽点布局:
+      - 第5章: 打脸挑衅者
+      - 第15章: 突破境界震惊全场
+      - 第25章: 宗门大比夺冠
 ```
 
-#### 3. 生成大纲
+**重要**: 编辑 `prompts/style_guide.yaml` 调整风格指导，使其符合你的小说类型！
+
+### 4. 生成大纲
 
 ```bash
-# 幕级规划（含爽点战略布局）
-python soundnovel.py cli outline --stage act
+# 两阶段大纲生成（幕级规划 + 章级骨架）
+uv run soundnovel.py cli outline
 
-# 审查并调整幕规划
-edit user/output/outline/act_plan.yaml
-
-# 章级骨架
-python soundnovel.py cli outline --stage chapter
-
-# 审查并调整章骨架
-edit user/output/outline/chapter_skeletons.yaml
-
-# 场景级剧本（可单独生成某章）
-python soundnovel.py cli outline --stage scene --chapter 8
+# 产物保存在 novels/{novel_id}/outline/outline.json
 ```
 
-#### 4. 扩写正文
+大纲包含：
+- 幕级规划（含爽点战略布局）
+- 章级骨架（章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
+
+### 5. 扩写正文
 
 ```bash
-# 基于场景剧本扩写
-python soundnovel.py cli expand --chapter 8
+# 扩写单章
+uv run soundnovel.py cli expand --chapter 8
 
 # 查看生成的正文
- cat user/output/draft/第0008章.txt
+cat novels/{novel_id}/draft/第0008章.txt
+
+# 从上次位置继续扩写
+uv run soundnovel.py cli continue
 ```
+
+---
+
+## 多小说管理
+
+### 典型工作流
+
+```bash
+# 1. 创建修仙小说
+uv run soundnovel.py novel create
+# 输入: honghuang, "洪荒修仙小说", 选择豆包API
+
+# 2. 填写设定并生成...
+
+# 3. 切换到都市小说
+uv run soundnovel.py novel create
+# 输入: dushi, "都市异能小说", 选择DeepSeekAPI
+
+# 4. 两个小说完全独立，prompts、source、draft互不干扰
+
+# 5. 随时切换
+uv run soundnovel.py novel switch honghuang
+uv run soundnovel.py cli expand --chapter 10
+
+uv run soundnovel.py novel switch dushi
+uv run soundnovel.py cli expand --chapter 5
+```
+
+### 小说导出/导入
+
+```bash
+# 导出小说（备份/分享）
+uv run soundnovel.py novel export honghuang --output backup/honghuang_20250510.zip
+
+# 导入小说
+uv run soundnovel.py novel import backup/honghuang_20250510.zip
+```
+
+---
 
 ## 创作工作流
 
 ```
-用户提供原材料
-    ├── 世界观（种子）
-    ├── 核心冲突（方向）
-    ├── 人物小传（灵魂）
-    └── 整体大纲（骨架）
-            ↓
-系统三阶段生成
-    ├── 幕级规划（爽点战略布局）
-    ├── 章级骨架（功能+约束标记）
-    └── 场景级剧本（节拍+对白+感官）
-            ↓
-人工审查调整
-    ├── 调整爽点时机
-    ├── 修改节拍设计
-    └── 优化对白要点
-            ↓
-系统扩写执行
-    ├── 场景扩写（纯执行）
-    ├── 场景组装（编码）
-    └── 编码检查（毫秒级）
-            ↓
-成品章节
+用户阶段
+    ├── 1. 配置API（一次）
+    │       └── uv run soundnovel.py api create
+    ├── 2. 创建小说
+    │       └── uv run soundnovel.py novel create
+    ├── 3. 填写设定
+    │       ├── source/core_setting.yaml
+    │       ├── source/overall_outline.yaml
+    │       └── prompts/style_guide.yaml（重要！）
+    └── 4. 审查大纲
+            └── 调整爽点时机、修改情节设计
+
+系统阶段
+    ├── 1. 生成幕级规划
+    ├── 2. 生成章级骨架
+    └── 3. 上下文注入扩写
+            └── 30章大纲 + 10章正文 + 当前骨架
+
+迭代阶段
+    ├── 1. 人工审阅章节
+    ├── 2. 如需修改 → 手动编辑draft
+    ├── 3. 标记修改类型 → uv run soundnovel.py cli touch
+    └── 4. 级联重生成受影响章节
 ```
+
+---
+
+## 配置系统
+
+### 小说专属配置
+
+每个小说独立配置，位于 `novels/{novel_id}/config/`:
+
+| 文件 | 说明 | 示例 |
+|------|------|------|
+| `novel.json` | 元数据、API配置引用 | `{"name": "洪荒", "api_config_ref": "doubao-pro"}` |
+| `generation.json` | 生成参数 | `{"outline_window": 30, "draft_window": 10}` |
+| `state.json` | 生成进度和章节状态 | `{"last_draft_chapter": 50, "chapter_states": {...}}` |
+
+### API配置
+
+全局配置，位于 `api/configs/*.json`:
+
+```json
+{
+  "id": "doubao-pro",
+  "name": "豆包专业版",
+  "provider": "doubao",
+  "api_key": "xxx",
+  "api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+  "models": {
+    "expansion_model": "doubao-seed-2-0-lite-260215"
+  },
+  "is_default": true
+}
+```
+
+---
+
+## 从旧版迁移
+
+如果你使用过旧版单小说结构（`user/`目录）：
+
+```bash
+# 1. 备份旧数据（已完成）
+cp -r user user.backup.$(date +%Y%m%d)
+
+# 2. API配置会自动识别旧配置
+uv run soundnovel.py api list
+
+# 3. 将旧小说迁移到新结构
+# 手动复制或创建新小说后导入
+uv run soundnovel.py novel create
+# 然后复制 user/source/* 到 novels/{id}/source/
+# 复制 user/output/* 到 novels/{id}/
+
+# 4. prompts模板已内置在代码中，会自动生成通用模板
+# 根据你的小说类型修改 prompts/style_guide.yaml
+```
+
+---
 
 ## 关键优势
 
-1. **创意集中在大纲阶段**：AI负责工程化实现，你负责核心创意
-2. **爽点可控**：不是随机出现，是按节奏规划的产物
-3. **人工可干预**：可在任意阶段调整大纲，无需重试扩写
-4. **质量稳定**：扩写纯执行，不受AI状态波动影响
-5. **成本优化**：编码检查替代大部分API评审
+1. **创意集中在大纲阶段**: AI负责工程化实现，你负责核心创意
+2. **多小说隔离**: 每个小说独立配置、独立prompts、独立输出
+3. **API配置复用**: 一次配置，多小说共享
+4. **上下文感知**: 自动感知用户修改，保证前后连贯
+5. **人工可干预**: 可在任意阶段调整大纲，系统智能管理重生成
+6. **质量稳定**: 扩写纯执行，不受AI状态波动影响
+7. **成本优化**: 每章一次API调用，无中间状态
 
-## 构建可执行文件
-
-打包成 `.exe` 分享给其他人：
-
-```bash
-# 构建 CLI 版本
-python build_exe.py
-
-# 清理构建文件
-python build_exe.py --clean
-```
-
-输出：`dist/SoundNovelAI_CLI.zip`
+---
 
 ## 隐私与安全
 
-- API Key 存储在 `user/config/session.json` 中
-- `session.json` 已被加入 `.gitignore`
+- API Key存储在`api/configs/*.json`中（本地文件）
+- 已加入`.gitignore`，不会提交到版本控制
 - 生成的内容默认不提交到版本控制
+
+---
 
 ## 许可证
 

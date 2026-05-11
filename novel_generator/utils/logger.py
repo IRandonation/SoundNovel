@@ -23,7 +23,7 @@ class NovelLogger:
             config: 配置信息
         """
         self.config = config
-        self.log_dir = Path(config.get('paths', {}).get('log_dir', 'user/logs'))
+        self.log_dir = Path(config.get('paths', {}).get('log_dir', 'logs'))
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # 确保日志子目录存在
@@ -419,7 +419,7 @@ class BackupManager:
             config: 配置信息
         """
         self.config = config
-        self.backup_dir = Path(config.get('paths', {}).get('log_dir', 'user/logs')) / "backups"
+        self.backup_dir = Path(config.get('paths', {}).get('log_dir', 'logs')) / "backups"
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         
         # 备份配置

@@ -63,23 +63,23 @@ class SystemConfig:
     """系统配置类"""
 
     logging_level: str = "INFO"
-    log_file: str = "user/logs/novel_generator.log"
+    log_file: str = "logs/novel_generator.log"
     backup_enabled: bool = True
     backup_history: int = 10  # 保留最近10个备份
 
 
 @dataclass
 class PathConfig:
-    """路径配置类"""
+    """路径配置类（新架构版本）"""
 
     project_root: str = "."
-    core_setting_file: str = "user/source/core_setting.yaml"
-    outline_dir: str = "user/output/outline/"
-    draft_dir: str = "user/output/draft/"
-    prompt_dir: str = "user/prompts/"
-    log_dir: str = "user/logs/"
-    api_log_dir: str = "user/logs/ai_api_logs/"
-    system_log_dir: str = "user/logs/system_logs/"
+    core_setting_file: str = "source/core_setting.yaml"
+    outline_dir: str = "outline/"
+    draft_dir: str = "draft/"
+    prompt_dir: str = "prompts/"
+    log_dir: str = "logs/"
+    api_log_dir: str = "logs/ai_api_logs/"
+    system_log_dir: str = "logs/system_logs/"
 
 
 @dataclass
@@ -399,14 +399,14 @@ def create_default_config() -> Dict[str, Any]:
         "top_p": 0.7,
         "system": {
             "api": {"max_retries": 5, "retry_delay": 2, "timeout": 60},
-            "logging": {"level": "INFO", "file": "user/logs/novel_generator.log"},
+            "logging": {"level": "INFO", "file": "logs/novel_generator.log"},
         },
         "paths": {
-            "core_setting": "user/source/core_setting.yaml",
-            "outline_dir": "user/output/outline/",
-            "draft_dir": "user/output/draft/",
-            "prompt_dir": "user/prompts/",
-            "log_dir": "user/logs/",
+            "core_setting": "source/core_setting.yaml",
+            "outline_dir": "outline/",
+            "draft_dir": "draft/",
+            "prompt_dir": "prompts/",
+            "log_dir": "logs/",
         },
         "novel_generation": {
             "stage1_use_long_model": True,

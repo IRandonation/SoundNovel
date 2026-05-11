@@ -11,7 +11,6 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from novel_generator.config.config_manager import ConfigManager
 from novel_generator.core.chapter_expander import (
     ChapterExpander,
     _build_outline_context,
@@ -25,7 +24,7 @@ from novel_generator.utils.common import (
 )
 from novel_generator.cli.utils import (
     print_success, print_error, print_info, print_warning,
-    confirm_action,
+    confirm_action, get_config_manager,
 )
 from novel_generator.core.ai_roles import AIRole
 
@@ -39,8 +38,7 @@ def _parse_chapter_range(range_str: str):
 
 
 def run(args: argparse.Namespace) -> int:
-    config_manager = ConfigManager(str(Path.cwd()))
-    session_mgr = config_manager.session_manager
+    config_manager = get_config_manager(novel_id=getattr(args, 'novel_id', None))
 
     # 解析章节范围
     if args.chapters:
@@ -57,7 +55,9 @@ def run(args: argparse.Namespace) -> int:
     outline_window = gen_config.get("outline_window", 30)
     draft_window = gen_config.get("draft_window", 10)
 
-    outline_file = session_mgr.state.generation_state.outline_file
+    # Get outline file from state
+    state = config_manager.state
+    outline_file = state.get("outline_file", "")
     if not outline_file:
         outline_file = get_latest_outline_file()
 
@@ -74,14 +74,13 @@ def run(args: argparse.Namespace) -> int:
     cascade_end = end_ch + draft_window
     affected = list(range(end_ch + 1, cascade_end + 1))
 
-    # 检查受影响范围内是否有已存在的章节
-    draft_dir = config.get("paths", {}).get("draft_dir", "output/draft/")
-    if not Path(draft_dir).is_absolute():
-        draft_dir = str(Path.cwd() / draft_dir)
+    # Get novel paths
+    novel_paths = config_manager.get_novel_paths()
+    draft_dir = novel_paths["draft_dir"]
 
     existing_affected = []
     for ch in affected:
-        if (Path(draft_dir) / f"第{ch:04d}章.txt").exists():
+        if (draft_dir / f"第{ch:04d}章.txt").exists():
             existing_affected.append(ch)
 
     if existing_affected:
@@ -95,7 +94,7 @@ def run(args: argparse.Namespace) -> int:
             else:
                 print_info(f"仅重生成第{start_ch}-{end_ch}章，受影响章节将标记为 dirty")
                 for ch in existing_affected:
-                    session_mgr.set_chapter_state(ch, "dirty")
+                    config_manager.set_chapter_state(ch, "dirty")
     else:
         print_info(f"重生成第{start_ch}-{end_ch}章（无后续章节受影响）")
 
@@ -140,7 +139,7 @@ def run(args: argparse.Namespace) -> int:
             )
 
             expander.save_chapter(ch_num, content, draft_dir)
-            session_mgr.set_chapter_state(ch_num, "clean")
+            config_manager.set_chapter_state(ch_num, "clean")
 
             print_success(f"第 {ch_num} 章重生成完成 ({len(content)}字)")
             success_count += 1

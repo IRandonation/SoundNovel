@@ -1,7 +1,7 @@
 """
 状态查看命令
 
-显示当前项目的生成进度、配置状态和章节状态。
+显示当前小说项目的生成进度、配置状态和章节状态。
 """
 
 import argparse
@@ -10,28 +10,38 @@ from typing import Optional
 
 project_root = Path(__file__).parent.parent.parent.parent
 
-from novel_generator.config.session import SessionManager
 from novel_generator.cli.utils import (
     print_success,
     print_error,
     print_info,
     print_warning,
+    get_config_manager,
 )
 
 
 def run(args: argparse.Namespace) -> int:
-    session_manager = SessionManager(str(Path.cwd()))
-    status = session_manager.get_status_summary()
+    """运行状态命令"""
+    try:
+        config_manager = get_config_manager(novel_id=getattr(args, 'novel_id', None))
+    except ValueError as e:
+        print_error(str(e))
+        print_info("请先运行 'soundnovel novel create' 创建小说项目")
+        return 1
+    except Exception as e:
+        print_error(f"加载配置失败: {e}")
+        return 1
+
+    status = config_manager.get_status_summary()
 
     print()
     print_info("=" * 50)
-    print_info("项目状态")
+    print_info(f"小说状态: {status['project_name']}")
     print_info("=" * 50)
     print()
 
-    print(f"  项目名称: {status['project_name']}")
-    print(f"  创建时间: {status['created_at'] or '未初始化'}")
-    print(f"  更新时间: {status['updated_at'] or '未初始化'}")
+    print(f"  小说ID: {config_manager.novel_id}")
+    print(f"  创建时间: {status['created_at'] or '未记录'}")
+    print(f"  更新时间: {status['updated_at'] or '未记录'}")
     print()
 
     print_info("--- API 配置 ---")
@@ -54,7 +64,7 @@ def run(args: argparse.Namespace) -> int:
         if last_draft < total:
             next_chapter = last_draft + 1
             print()
-            print_info(f"续写建议: 运行 'soundnovel continue' 从第 {next_chapter} 章继续")
+            print_info(f"续写建议: 运行 'soundnovel cli continue' 从第 {next_chapter} 章继续")
         else:
             print()
             print_success("所有章节已完成！")
@@ -74,16 +84,21 @@ def run(args: argparse.Namespace) -> int:
         print(f"  大纲文件: {status['outline_file']}")
 
     # 章节状态一览
-    state_summary = session_manager.get_chapter_states_summary()
-    if state_summary["total_tracked"] > 0:
+    state = config_manager.state
+    chapter_states = state.get("chapter_states", {})
+    if chapter_states:
         print()
         print_info("--- 章节状态 ---")
-        print(f"  已追踪: {state_summary['total_tracked']} 章")
-        print(f"  [C]lean: {state_summary['clean']} | [D]irty: {state_summary['dirty']} | Cosmetic[O]: {state_summary['cosmetic']}")
+
+        clean_count = sum(1 for v in chapter_states.values() if v == "clean")
+        dirty_count = sum(1 for v in chapter_states.values() if v == "dirty")
+        cosmetic_count = sum(1 for v in chapter_states.values() if v == "cosmetic")
+
+        print(f"  已追踪: {len(chapter_states)} 章")
+        print(f"  [C]lean: {clean_count} | [D]irty: {dirty_count} | Cosmetic[O]: {cosmetic_count}")
 
         # 按章节号排序显示
-        states = state_summary["states"]
-        sorted_chapters = sorted(states.keys(), key=lambda x: int(x))
+        sorted_chapters = sorted(chapter_states.keys(), key=lambda x: int(x))
         state_chars = {"clean": "C", "dirty": "D", "cosmetic": "O"}
 
         # 每10章一行
@@ -93,31 +108,10 @@ def run(args: argparse.Namespace) -> int:
                 row_chapters = sorted_chapters[row_start:row_start + 10]
                 row_parts = []
                 for ch in row_chapters:
-                    s = states.get(ch, "?")
+                    s = chapter_states.get(ch, "?")
                     row_parts.append(f"{ch}:{state_chars.get(s, '?')}")
                 print(f"  {'  '.join(row_parts)}")
 
-        # 级联警告
-        dirty_chapters = [int(k) for k, v in states.items() if v == "dirty"]
-        if dirty_chapters:
-            first_dirty = min(dirty_chapters)
-            print()
-            print_warning(f"第一个 dirty 章节: 第{first_dirty}章")
-            print_info(f"建议运行: soundnovel continue --cascade  或  soundnovel regenerate --chapters {first_dirty}-...")
-
-    print()
-    print_info(f"  会话记录: {status['session_count']} 条")
-
-    recent = session_manager.get_recent_sessions(5)
-    if recent:
-        print()
-        print_info("--- 最近会话 ---")
-        for s in recent:
-            status_icon = "+" if s.success else "X"
-            chapters_str = f"第{s.chapters[0]}-{s.chapters[1]}章" if s.chapters else ""
-            print(f"  [{status_icon}] [{s.date}] {s.action} {chapters_str}")
-
     print()
     print_info("=" * 50)
-
     return 0

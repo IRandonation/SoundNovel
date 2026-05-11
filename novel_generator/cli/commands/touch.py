@@ -13,9 +13,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from novel_generator.config.config_manager import ConfigManager
 from novel_generator.cli.utils import (
     print_success, print_error, print_info, print_warning,
+    get_config_manager,
 )
 
 
@@ -24,16 +24,15 @@ def run(args: argparse.Namespace) -> int:
     change_type = args.type
     no_cascade = getattr(args, 'no_cascade', False)
 
-    config_manager = ConfigManager(str(Path.cwd()))
-    session_mgr = config_manager.session_manager
+    config_manager = get_config_manager(novel_id=getattr(args, 'novel_id', None))
 
     if change_type == "cosmetic":
-        session_mgr.set_chapter_state(chapter_num, "cosmetic")
+        config_manager.set_chapter_state(chapter_num, "cosmetic")
         print_success(f"第{chapter_num}章已标记为 cosmetic（仅润色），不触发级联")
         return 0
 
     # content 类型
-    session_mgr.set_chapter_state(chapter_num, "clean")
+    config_manager.set_chapter_state(chapter_num, "clean")
 
     if no_cascade:
         print_info(f"第{chapter_num}章已标记为 content 变更（--no-cascade，不传播 dirty）")
@@ -43,7 +42,7 @@ def run(args: argparse.Namespace) -> int:
     gen_config = config_manager.get_generation_config()
     draft_window = gen_config.get("draft_window", 10)
 
-    count = session_mgr.mark_dirty_cascade(chapter_num, draft_window)
+    count = config_manager.mark_dirty_cascade(chapter_num, draft_window)
     if count > 0:
         affected_end = chapter_num + draft_window
         print_warning(f"第{chapter_num}章为内容变更，第{chapter_num + 1}~{affected_end}章已标记为 dirty")
