@@ -2,5 +2,10 @@
   "context_chapters": 10,
   "default_word_count": 3500,
   "outline_window": 30,
-  "draft_window": 10
+  "draft_window": 10,
+  "conversation_window": 100,
+  "skeleton_batch_size": 10,
+  "enable_act_plan_injection": true,
+  "save_conversation_checkpoints": true,
+  "max_conversation_tokens": 800000
 }

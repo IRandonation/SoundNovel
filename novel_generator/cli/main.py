@@ -130,6 +130,17 @@ def create_parser() -> argparse.ArgumentParser:
         default=3,
         help='幕数（默认: 3）'
     )
+    outline_parser.add_argument(
+        '--window', '-w',
+        type=int,
+        default=None,
+        help='对话窗口大小（默认: 100章）'
+    )
+    outline_parser.add_argument(
+        '--resume', '-r',
+        action='store_true',
+        help='从上次检查点恢复生成'
+    )
     outline_parser.set_defaults(func=commands.outline)
 
     # expand 命令

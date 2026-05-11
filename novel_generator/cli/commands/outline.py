@@ -104,12 +104,17 @@ def run(args: argparse.Namespace) -> int:
 
         # 执行两阶段生成（自动增量）
         batch_size = args.batch_size if args.batch_size else None
+        window = args.window if args.window else None
+        resume = args.resume if hasattr(args, 'resume') else False
+
         final_outline = outline_gen.generate_outline_v2(
             core_setting=core_setting,
             overall_outline=overall_outline,
             num_acts=num_acts,
             chapter_range=(start_ch, end_ch),
             batch_size=batch_size,
+            conversation_window=window,
+            resume=resume,
         )
 
         # 更新 session 中的大纲文件路径

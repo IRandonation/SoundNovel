@@ -98,6 +98,13 @@ class GenerationConfig:
     draft_window: int = 10
     batch_size: int = 10  # 批量生成默认批次大小
 
+    # 滑动窗口多轮配置（完全替换原有batch模式）
+    conversation_window: int = 100  # 对话窗口大小（章节数）
+    skeleton_batch_size: int = 10  # 每批生成章节数
+    enable_act_plan_injection: bool = True  # 是否动态注入幕规划
+    save_conversation_checkpoints: bool = True  # 是否保存检查点
+    max_conversation_tokens: int = 800000  # 单对话最大token数（触发修剪）
+
 
 class Settings:
     """配置管理器"""
@@ -207,6 +214,17 @@ class Settings:
                 self.generation_config.draft_window = gen_config["draft_window"]
             if "batch_size" in gen_config:
                 self.generation_config.batch_size = gen_config["batch_size"]
+            # 滑动窗口多轮配置
+            if "conversation_window" in gen_config:
+                self.generation_config.conversation_window = gen_config["conversation_window"]
+            if "skeleton_batch_size" in gen_config:
+                self.generation_config.skeleton_batch_size = gen_config["skeleton_batch_size"]
+            if "enable_act_plan_injection" in gen_config:
+                self.generation_config.enable_act_plan_injection = gen_config["enable_act_plan_injection"]
+            if "save_conversation_checkpoints" in gen_config:
+                self.generation_config.save_conversation_checkpoints = gen_config["save_conversation_checkpoints"]
+            if "max_conversation_tokens" in gen_config:
+                self.generation_config.max_conversation_tokens = gen_config["max_conversation_tokens"]
 
         if "ai_roles" in config_dict:
             self.ai_roles_config = AIRolesConfig.from_dict(config_dict["ai_roles"])
@@ -284,6 +302,12 @@ class Settings:
                 "outline_window": self.generation_config.outline_window,
                 "draft_window": self.generation_config.draft_window,
                 "batch_size": self.generation_config.batch_size,
+                # 滑动窗口多轮配置
+                "conversation_window": self.generation_config.conversation_window,
+                "skeleton_batch_size": self.generation_config.skeleton_batch_size,
+                "enable_act_plan_injection": self.generation_config.enable_act_plan_injection,
+                "save_conversation_checkpoints": self.generation_config.save_conversation_checkpoints,
+                "max_conversation_tokens": self.generation_config.max_conversation_tokens,
             },
             "ai_roles": self.ai_roles_config.to_dict(),
         }
@@ -347,6 +371,15 @@ class Settings:
 
     def get_batch_size(self) -> int:
         return self.generation_config.batch_size
+
+    def get_skeleton_generation_mode(self) -> str:
+        return self.generation_config.skeleton_generation_mode
+
+    def get_conversation_window(self) -> int:
+        return self.generation_config.conversation_window
+
+    def get_skeleton_batch_size(self) -> int:
+        return self.generation_config.skeleton_batch_size
 
     def update_api_key(self, api_key: str):
         self.api_config.api_key = api_key

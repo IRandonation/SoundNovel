@@ -32,7 +32,11 @@ GEN_PARAMS = {
     "outline_window": "大纲上下文窗口 (向前看过往大纲章数)",
     "draft_window": "正文上下文窗口 (向前看过往已生成正文章数)",
     "skeleton_batch_size": "骨架批次大小 (单次API调用生成的章数)",
-    "skeleton_context_window": "骨架上下文窗口 (向前看过往骨架章数)",
+    # 滑动窗口多轮配置
+    "conversation_window": "对话窗口大小 (累积的上下文章数)",
+    "enable_act_plan_injection": "是否动态注入幕规划",
+    "save_conversation_checkpoints": "是否保存检查点",
+    "max_conversation_tokens": "单对话最大token数 (触发修剪)",
 }
 
 
@@ -226,7 +230,11 @@ def run(args):
                         "outline_window": 30,
                         "draft_window": 10,
                         "skeleton_batch_size": 10,
-                        "skeleton_context_window": 15,
+                        # 滑动窗口多轮配置
+                        "conversation_window": 100,
+                        "enable_act_plan_injection": True,
+                        "save_conversation_checkpoints": True,
+                        "max_conversation_tokens": 800000,
                     }
                     config_manager.set_generation_config(**default_config)
                     print("已重置为默认配置")
@@ -239,7 +247,10 @@ def run(args):
     # 处理参数设置
     if any(
         getattr(args, attr, None) is not None
-        for attr in ["default_words", "outline_window", "draft_window", "skeleton_batch_size", "skeleton_context_window"]
+        for attr in [
+            "default_words", "outline_window", "draft_window", "skeleton_batch_size",
+            "conversation_window", "enable_act_plan_injection", "save_conversation_checkpoints", "max_conversation_tokens",
+        ]
     ):
         novel_id = _get_current_novel_id(project_root)
         if not novel_id:
@@ -258,8 +269,15 @@ def run(args):
                 updates["draft_window"] = args.draft_window
             if args.skeleton_batch_size is not None:
                 updates["skeleton_batch_size"] = args.skeleton_batch_size
-            if args.skeleton_context_window is not None:
-                updates["skeleton_context_window"] = args.skeleton_context_window
+            # 滑动窗口多轮配置
+            if getattr(args, "conversation_window", None) is not None:
+                updates["conversation_window"] = args.conversation_window
+            if getattr(args, "enable_act_plan_injection", None) is not None:
+                updates["enable_act_plan_injection"] = args.enable_act_plan_injection
+            if getattr(args, "save_conversation_checkpoints", None) is not None:
+                updates["save_conversation_checkpoints"] = args.save_conversation_checkpoints
+            if getattr(args, "max_conversation_tokens", None) is not None:
+                updates["max_conversation_tokens"] = args.max_conversation_tokens
 
             if updates:
                 config_manager.set_generation_config(**updates)
@@ -313,9 +331,33 @@ def add_parser(subparsers):
         help="设置骨架批次大小：单次API调用生成的章数（默认10）"
     )
 
+    # 滑动窗口多轮配置参数
     parser.add_argument(
-        "--skeleton-context-window", type=int, dest="skeleton_context_window",
-        help="设置骨架上下文窗口：向前看过往骨架的章数（默认15）"
+        "--conversation-window",
+        type=int,
+        dest="conversation_window",
+        help="设置对话窗口大小：累积的上下文章数（默认100）"
+    )
+
+    parser.add_argument(
+        "--enable-act-plan-injection",
+        type=lambda x: x.lower() in ('true', '1', 'yes'),
+        dest="enable_act_plan_injection",
+        help="设置是否动态注入幕规划: true/false（默认true）"
+    )
+
+    parser.add_argument(
+        "--save-conversation-checkpoints",
+        type=lambda x: x.lower() in ('true', '1', 'yes'),
+        dest="save_conversation_checkpoints",
+        help="设置是否保存检查点: true/false（默认true）"
+    )
+
+    parser.add_argument(
+        "--max-conversation-tokens",
+        type=int,
+        dest="max_conversation_tokens",
+        help="设置单对话最大token数，超过将触发修剪（默认800000）"
     )
 
     parser.set_defaults(func=run)

@@ -10,6 +10,7 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 import logging
+from datetime import datetime
 
 from novel_generator.config.settings import Settings
 from novel_generator.utils.multi_model_client import MultiModelClient
@@ -712,6 +713,676 @@ class ChapterSkeletonGenerator:
         return ''.join(chars)
 
 
+class SlidingWindowSkeletonGenerator:
+    """滑动窗口多轮大纲生成器
+
+    支持任意起始点的增量生成，跨幕无缝衔接。
+    以对话窗口（50-100章）为单位累积上下文。
+    """
+
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        ai_role_manager: Any,
+        act_plan: Dict[str, Any],
+        core_setting: Dict[str, Any] = None,
+        overall_outline: Dict[str, Any] = None,
+        output_dir: Optional[Path] = None,
+        conversation_window: int = 100,  # 对话窗口大小（章节数）
+        batch_size: int = 10,  # 每批章节数
+    ):
+        self.config = config
+        self.ai_role_manager = ai_role_manager
+        self.act_plan = act_plan
+        self.core_setting = core_setting or {}
+        self.overall_outline = overall_outline or {}
+        self.conversation_window = conversation_window
+        self.batch_size = batch_size
+        self.output_dir = output_dir or Path(".")
+        self.logger = logging.getLogger(__name__)
+
+        # 对话状态
+        self.messages: List[Dict[str, str]] = []  # 当前对话历史
+        self.window_start: int = 0  # 当前窗口起始章
+
+        # 幕规划缓存
+        self._act_chapter_ranges = self._parse_act_ranges(act_plan)
+
+    def generate_skeletons(
+        self,
+        chapter_range: Tuple[int, int],
+        existing_skeletons: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """生成指定范围的大纲（支持任意起始点）
+
+        Args:
+            chapter_range: (start_ch, end_ch) 要生成的章节范围
+            existing_skeletons: 已存在的大纲（用于初始化上下文）
+
+        Returns:
+            Dict[str, Any]: 生成的章节大纲
+        """
+        start_ch, end_ch = chapter_range
+        self.logger.info(f"开始滑动窗口多轮生成: 第{start_ch}-{end_ch}章")
+
+        # 初始化对话窗口
+        self._init_conversation_window(start_ch, existing_skeletons)
+
+        all_skeletons = existing_skeletons.copy() if existing_skeletons else {}
+
+        # 批次生成
+        for batch_start in range(start_ch, end_ch + 1, self.batch_size):
+            batch_end = min(batch_start + self.batch_size - 1, end_ch)
+
+            # 检查是否需要滑动窗口
+            if batch_start > self.window_start + self.conversation_window:
+                self._slide_window(batch_start, all_skeletons)
+
+            # 构建用户消息
+            user_msg = self._build_batch_prompt(batch_start, batch_end, all_skeletons)
+            self.messages.append({"role": "user", "content": user_msg})
+
+            # 调用API（携带完整对话历史）
+            response = self._call_ai_api()
+
+            # 解析响应（带重试）
+            batch_skeletons = self._parse_batch_response(response, (batch_start, batch_end))
+            expected_count = batch_end - batch_start + 1
+            actual_count = len(batch_skeletons) if batch_skeletons else 0
+
+            # 解析失败或章节数量不足，都触发重试
+            if not batch_skeletons or actual_count < expected_count:
+                if batch_skeletons and actual_count < expected_count:
+                    self.logger.warning(
+                        f"批次{batch_start}-{batch_end}只生成{actual_count}/{expected_count}章，"
+                        f"缺少{expected_count - actual_count}章，开始重试..."
+                    )
+
+                # 解析失败，先尝试重试（最多2次）
+                retry_count = 0
+                max_retries = 2
+
+                while retry_count < max_retries:
+                    retry_count += 1
+                    self.logger.warning(f"第{retry_count}次重试...")
+
+                    # 构建重试提示词，强调JSON格式要求
+                    retry_prompt = self._build_retry_prompt(
+                        batch_start, batch_end, response,
+                        missing_count=expected_count - actual_count if batch_skeletons else expected_count
+                    )
+                    self.messages.append({"role": "user", "content": retry_prompt})
+
+                    # 重新调用API
+                    response = self._call_ai_api()
+
+                    # 再次解析
+                    batch_skeletons = self._parse_batch_response(response, (batch_start, batch_end))
+                    actual_count = len(batch_skeletons) if batch_skeletons else 0
+
+                    if batch_skeletons and actual_count >= expected_count:
+                        self.logger.info(f"第{retry_count}次重试成功！解析到 {actual_count} 章")
+                        break
+
+                # 重试后仍不足，但有一些结果，记录警告继续
+                if batch_skeletons and actual_count < expected_count:
+                    self.logger.warning(
+                        f"重试后仍缺少{expected_count - actual_count}章，继续生成..."
+                    )
+                elif not batch_skeletons:
+                    # 重试后完全没有结果，回退到单章模式
+                    self.logger.warning(f"重试{max_retries}次后仍失败，回退到单章模式")
+                    batch_skeletons = self._fallback_single_generation(
+                        batch_start, batch_end, all_skeletons
+                    )
+
+            all_skeletons.update(batch_skeletons)
+
+            # 将AI回复加入对话历史
+            self.messages.append({"role": "assistant", "content": response})
+
+            # 保存检查点
+            self._save_checkpoint(batch_end, all_skeletons)
+
+            # 简化过长的对话历史（保留窗口大小）
+            self._trim_conversation_if_needed()
+
+        return all_skeletons
+
+    def _init_conversation_window(
+        self, start_ch: int, existing_skeletons: Optional[Dict[str, Any]]
+    ) -> None:
+        """初始化对话窗口
+
+        加载前N章（窗口大小）作为初始上下文
+        """
+        self.window_start = max(1, start_ch - self.conversation_window + self.batch_size)
+
+        # 构建system消息（含核心设定和全部幕规划）
+        system_content = self._build_system_content()
+        self.messages = [{"role": "system", "content": system_content}]
+
+        # 加载前文作为初始assistant消息（如果有）
+        if existing_skeletons:
+            prev_context = self._format_previous_skeletons(
+                self.window_start, start_ch - 1, existing_skeletons
+            )
+            if prev_context:
+                self.messages.append({
+                    "role": "assistant",
+                    "content": f"前文大纲（第{self.window_start}-{start_ch-1}章）：\n{prev_context}",
+                })
+                self.logger.info(f"已加载前文大纲（第{self.window_start}-{start_ch-1}章）作为上下文")
+
+    def _build_system_content(self) -> str:
+        """构建system消息内容（含核心设定和全部幕规划）"""
+        parts = []
+
+        # 核心设定
+        if self.core_setting:
+            core_yaml = yaml.dump(
+                self.core_setting, allow_unicode=True, default_flow_style=False
+            )
+            parts.append(f"【核心设定】\n{core_yaml}")
+
+        # 全部幕规划
+        act_plans_text = self._build_all_act_plans_text()
+        if act_plans_text:
+            parts.append(f"\n【幕规划（全部）】\n{act_plans_text}")
+
+        # 整体故事框架
+        overall_text = self._build_overall_story_text()
+        if overall_text:
+            parts.append(f"\n【整体故事框架】\n{overall_text}")
+
+        # 系统指令
+        parts.append("\n【你的任务】")
+        parts.append("你是一个专业的小说章节规划师，擅长设计章节骨架结构。")
+        parts.append("请根据以上设定和前文大纲，依次生成指定章节的详细骨架。")
+        parts.append("确保章节间剧情连贯、伏笔贯通、情绪节奏合理。")
+
+        return "\n\n".join(parts)
+
+    def _build_all_act_plans_text(self) -> str:
+        """构建全部幕规划文本"""
+        acts = self.act_plan.get("幕规划", {})
+        if not acts:
+            return ""
+
+        lines = []
+        for i, (act_name, act_data) in enumerate(acts.items(), 1):
+            lines.append(f"\n=== 第{i}幕：{act_name} ===")
+
+            # 章节范围
+            chapter_range = act_data.get("章节范围", "")
+            if chapter_range:
+                lines.append(f"章节范围: {chapter_range}")
+
+            # 核心信息
+            core_conflict = act_data.get("核心冲突", "")
+            plot_summary = act_data.get("剧情概要", "")
+            if core_conflict:
+                lines.append(f"核心冲突: {core_conflict}")
+            if plot_summary:
+                lines.append(f"剧情概要: {plot_summary}")
+
+            # 爽点/爆点设计
+            highlights = act_data.get("爽点/爆点设计", [])
+            if highlights:
+                lines.append(f"爽点设计: {', '.join(str(h) for h in highlights[:3])}")
+
+            # 与下幕衔接
+            next_act_link = act_data.get("与下幕衔接", "")
+            if next_act_link:
+                lines.append(f"与下幕衔接: {next_act_link}")
+
+        return "\n".join(lines)
+
+    def _build_overall_story_text(self) -> str:
+        """构建整体故事框架文本"""
+        parts = []
+        outline_data = self.overall_outline.get("幕结构", self.overall_outline)
+        for key, value in outline_data.items():
+            if isinstance(value, dict):
+                chapter_range = value.get("章节范围", "")
+                title = value.get("标题", "")
+                overview = value.get("概述", "")
+                range_str = f"({chapter_range})" if chapter_range else ""
+                detail = f"{title} — {overview}" if title or overview else ""
+                parts.append(f"{key} {range_str}: {detail}")
+            else:
+                parts.append(f"{key}: {value}")
+        return "\n".join(parts)
+
+    def _format_previous_skeletons(
+        self, start_ch: int, end_ch: int, existing_skeletons: Dict[str, Any]
+    ) -> str:
+        """格式化前文大纲为紧凑摘要"""
+        if not existing_skeletons:
+            return ""
+
+        summaries = []
+        for ch in range(start_ch, end_ch + 1):
+            key = f"第{ch}章"
+            sk = existing_skeletons.get(key)
+            if not sk:
+                continue
+
+            parts = [key]
+            title = sk.get("标题", "")
+            if title:
+                parts.append(f"《{title}》")
+
+            core = sk.get("核心事件", "")
+            if core:
+                parts.append(f"核心: {core}")
+
+            ending = sk.get("结尾卡点", "")
+            if ending:
+                parts.append(f"结尾: {ending}")
+
+            foreshadow = sk.get("伏笔处理", {})
+            if isinstance(foreshadow, dict):
+                planted = foreshadow.get("埋设", [])
+                if planted:
+                    parts.append(f"埋笔: {'; '.join(str(p) for p in planted[:2])}")
+
+            summaries.append(" | ".join(parts))
+
+        return "\n".join(summaries) if summaries else ""
+
+    def _parse_act_ranges(self, act_plan: Dict[str, Any]) -> Dict[int, Tuple[int, int]]:
+        """解析幕规划中的章节范围
+
+        Returns:
+            Dict[int, Tuple[int, int]]: {幕号: (起始章, 结束章)}
+        """
+        ranges = {}
+        acts = act_plan.get("幕规划", {})
+
+        for i, (act_name, act_data) in enumerate(acts.items(), 1):
+            chapter_range = act_data.get("章节范围", "")
+            # 解析 "第1-50章" 或 "1-50" 格式
+            match = re.search(r"第?(\d+)\s*-\s*第?(\d+)\s*章?", chapter_range)
+            if match:
+                ranges[i] = (int(match.group(1)), int(match.group(2)))
+
+        return ranges
+
+    def _slide_window(
+        self, new_start: int, all_skeletons: Dict[str, Any]
+    ) -> None:
+        """滑动对话窗口
+
+        保留最近的N章在对话历史中，移除更早的消息
+        """
+        # 计算新的窗口起始章
+        self.window_start = new_start - self.conversation_window + self.batch_size
+
+        # 保留system消息
+        new_messages = [self.messages[0]]
+
+        # 计算需要保留的消息数量（每批生成batch_size章，每批对应2条消息：user + assistant）
+        messages_per_batch = 2
+        num_batches_to_keep = self.conversation_window // self.batch_size
+        messages_to_keep = num_batches_to_keep * messages_per_batch
+
+        # 保留最近的消息
+        if len(self.messages) > messages_to_keep + 1:  # +1 for system message
+            keep_start_idx = len(self.messages) - messages_to_keep
+            new_messages.extend(self.messages[keep_start_idx:])
+        else:
+            new_messages.extend(self.messages[1:])
+
+        self.messages = new_messages
+        self.logger.info(f"窗口滑动至: 第{self.window_start}章起，保留{num_batches_to_keep}批对话")
+
+    def _build_batch_prompt(
+        self, batch_start: int, batch_end: int, all_skeletons: Dict[str, Any]
+    ) -> str:
+        """构建批次生成提示词"""
+        batch_count = batch_end - batch_start + 1
+
+        lines = []
+        lines.append(f"【任务】生成第{batch_start}-{batch_end}章的详细骨架（共{batch_count}章）")
+        lines.append("")
+        lines.append("【重要要求】")
+        lines.append(f"1. 必须一次性生成全部{batch_count}章的完整骨架，不得省略或简化")
+        lines.append(f"2. 每章都必须包含完整的10个字段（标题、字数目标、章节定位、核心事件、与前章因果、人物行动、场景概览、情绪曲线、伏笔处理、结尾卡点）")
+        lines.append("3. 确保章节之间剧情连贯，伏笔呼应")
+        lines.append("")
+        lines.append("【本批次要求】")
+        lines.append("1. 每章必须有独立的'起承转合'微结构")
+        lines.append("2. 核心事件要写清因果逻辑（因为X，所以Y，导致Z）")
+        lines.append("3. 章节之间剧情自然递进，前章的结尾卡点导向后章的开场")
+        lines.append("4. 情绪曲线在本批次内有起有伏")
+        lines.append("5. 伏笔埋设与回收要跨章协调")
+        lines.append("")
+
+        # 添加幕定位信息
+        involved_acts = self._get_involved_acts(batch_start, batch_end)
+        if involved_acts:
+            lines.append("【涉及幕定位】")
+            for act_num in involved_acts:
+                act_range = self._act_chapter_ranges.get(act_num)
+                if act_range:
+                    lines.append(f"- 第{act_num}幕：第{act_range[0]}-{act_range[1]}章")
+            lines.append("")
+
+        lines.append("【输出格式】")
+        lines.append("请以严格的JSON格式输出（必须使用英文双引号，绝不可用中文引号）：")
+        lines.append("```json")
+        lines.append("{")
+        lines.append(f'  "第{batch_start}章": {{')
+        lines.append('    "标题": "章节标题",')
+        lines.append('    "字数目标": 2500,')
+        lines.append('    "章节定位": "本章在幕中的角色",')
+        lines.append('    "核心事件": "2-3句描述核心情节，写明因果链",')
+        lines.append('    "与前章因果": "承接上章XX，推进YY，为下章ZZ埋笔",')
+        lines.append('    "人物行动": {')
+        lines.append('      "主角": "主角行动与动机",')
+        lines.append('      "关键配角": "配角行动与主线关联"')
+        lines.append("    },")
+        lines.append('    "场景概览": [')
+        lines.append('      "开场：XX地点 — 核心事件概述",')
+        lines.append('      "发展：XX地点 — 核心事件概述",')
+        lines.append('      "高潮：XX地点 — 核心事件概述",')
+        lines.append('      "收束：XX地点 — 核心事件概述"')
+        lines.append("    ],")
+        lines.append('    "情绪曲线": "本章情绪走向",')
+        lines.append('    "伏笔处理": {')
+        lines.append('      "埋设": ["伏笔描述"],')
+        lines.append('      "回收": ["回收描述（标注前章编号）"]')
+        lines.append("    },")
+        lines.append('    "结尾卡点": "章末悬念/钩子（具体描述）"')
+        lines.append("  },")  # 注意这里要有逗号！
+        lines.append(f'  "第{batch_start+1}章": {{')
+        lines.append('    // ... 第2章内容，格式同上')
+        lines.append("  },")  # 逗号分隔
+        lines.append('  // ... 以此类推直到')
+        lines.append(f'  "第{batch_end}章": {{')
+        lines.append('    // 最后一章内容')
+        lines.append("  }")  # 最后一章不加逗号
+        lines.append("}")
+        lines.append("```")
+        lines.append(f"重要：必须为第{batch_start}-{batch_end}章的每一章输出完整骨架，章节之间用逗号分隔，最后一章不加逗号。")
+
+        return "\n".join(lines)
+
+    def _get_involved_acts(self, start_ch: int, end_ch: int) -> List[int]:
+        """获取涉及的幕号列表"""
+        involved = []
+        for act_num, (act_start, act_end) in self._act_chapter_ranges.items():
+            if act_start <= end_ch and act_end >= start_ch:
+                involved.append(act_num)
+        return sorted(involved)
+
+    def _call_ai_api(self) -> str:
+        """调用AI API"""
+        try:
+            from novel_generator.core.ai_roles import AIRole
+
+            # 动态计算所需token数：基于对话历史长度估算
+            # 通常每批10章需要约12000-16000 token
+            estimated_input = sum(len(m["content"]) for m in self.messages)
+            # 输出通常是输入的1.5-2倍（章节生成）
+            estimated_output = min(16000, max(12000, int(estimated_input * 0.5)))
+
+            response = self.ai_role_manager.chat_completion(
+                role=AIRole.GENERATOR,
+                messages=self.messages,
+                max_tokens=estimated_output,
+            )
+            return response or ""
+        except Exception as e:
+            self.logger.error(f"AI API调用失败: {e}")
+            raise RetryableGenerationError(f"AI API调用失败: {e}")
+
+    def _parse_batch_response(
+        self, response: str, chapter_range: Tuple[int, int]
+    ) -> Dict[str, Any]:
+        """解析批次响应"""
+        start_ch, end_ch = chapter_range
+        try:
+            cleaned = self._clean_markdown_response(response)
+            data = json.loads(cleaned)
+
+            if not isinstance(data, dict):
+                raise ValueError("响应不是JSON对象")
+
+            # 提取章节骨架
+            skeletons = {}
+            for ch in range(start_ch, end_ch + 1):
+                key = f"第{ch}章"
+                if key in data:
+                    skeletons[key] = data[key]
+                else:
+                    # 尝试其他可能的键格式
+                    for k in data.keys():
+                        if str(ch) in k and "章" in k:
+                            skeletons[key] = data[k]
+                            break
+
+            if skeletons:
+                self.logger.info(f"解析到 {len(skeletons)} 章骨架")
+
+            return skeletons
+
+        except json.JSONDecodeError as e:
+            self.logger.warning(f"JSON解析失败: {e}，响应前500字符: {response[:500]}")
+            return {}
+        except Exception as e:
+            self.logger.warning(f"解析批次响应失败: {e}")
+            return {}
+
+    def _clean_markdown_response(self, response: str) -> str:
+        """清理Markdown格式的响应"""
+        lines = response.split("\n")
+        cleaned_lines = []
+        for line in lines:
+            if line.strip().startswith("```"):
+                continue
+            cleaned_lines.append(line)
+        result = "\n".join(cleaned_lines)
+
+        # 修复中文引号为英文引号（JSON标准）
+        result = result.replace('"', '"').replace('"', '"')  # 双引号
+        result = result.replace("'", "'").replace("'", "'")  # 单引号
+
+        # 修复JSON字符串内未转义的控制字符
+        in_string = False
+        escaped = False
+        chars = list(result)
+        for i, ch in enumerate(chars):
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string and ord(ch) < 0x20 and ch not in ("\n",):
+                chars[i] = " "
+        return "".join(chars)
+
+    def _build_retry_prompt(
+        self, batch_start: int, batch_end: int, failed_response: str,
+        missing_count: int = 0
+    ) -> str:
+        """构建重试提示词，强调JSON格式要求"""
+        batch_count = batch_end - batch_start + 1
+        lines = []
+
+        if missing_count > 0:
+            lines.append(f"【补全】第{batch_start}-{batch_end}章骨架（缺少{missing_count}章）")
+            lines.append("")
+            lines.append(f"之前的响应只生成了{batch_count - missing_count}/{batch_count}章，请补全缺少的{missing_count}章。")
+        else:
+            lines.append(f"【重试】第{batch_start}-{batch_end}章骨架生成")
+            lines.append("")
+            lines.append("之前的响应存在JSON格式错误，请重新生成并注意以下要求：")
+
+        lines.append("")
+        lines.append("【JSON格式要求】")
+        lines.append('1. 必须使用英文双引号 " 包裹所有键和字符串值，不可用中文引号 ""')
+        lines.append("2. 每个对象/字典的最后一个属性后不能有加逗号")
+        lines.append("3. 对象之间必须用逗号分隔")
+        lines.append('4. 键和值之间用冒号加空格分隔：": "')
+        lines.append('5. 字符串值内部的换行必须用 \\n 转义')
+        lines.append("")
+
+        if missing_count > 0:
+            lines.append(f"【要求】必须输出全部{batch_count}章的完整JSON，不得省略任何一章。")
+            lines.append("")
+
+        lines.append("【正确格式示例】")
+        lines.append("```json")
+        lines.append("{")
+        lines.append(f'  \"第{batch_start}章\": {{')
+        lines.append('    \"标题\": \"章节标题\",')
+        lines.append('    \"核心事件\": \"事件描述\"')
+        lines.append("  },")  # 注意逗号
+        lines.append(f'  \"第{batch_start+1}章\": {{')
+        lines.append('    \"标题\": \"章节标题\",')
+        lines.append('    \"核心事件\": \"事件描述\"')
+        lines.append("  }")  # 最后一章不加逗号
+        lines.append("}")
+        lines.append("```")
+        lines.append("")
+        lines.append(f"请输出第{batch_start}-{batch_end}章的完整JSON，确保格式严格正确。")
+
+        return "\n".join(lines)
+
+    def _fallback_single_generation(
+        self, start_ch: int, end_ch: int, existing_skeletons: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """回退到单章生成模式"""
+        self.logger.info(f"回退到单章模式: 第{start_ch}-{end_ch}章")
+
+        all_skeletons = {}
+        for ch in range(start_ch, end_ch + 1):
+            try:
+                # 使用原有的ChapterSkeletonGenerator逻辑
+                # 这里简化处理，实际可以调用原有方法
+                sk = self._generate_single_chapter(ch, existing_skeletons)
+                if sk:
+                    all_skeletons[f"第{ch}章"] = sk
+            except Exception as e:
+                self.logger.error(f"第{ch}章生成失败: {e}")
+
+        return all_skeletons
+
+    def _generate_single_chapter(
+        self, ch: int, existing_skeletons: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """单章生成（简化版）"""
+        # 构建单章提示词
+        prompt = f"请生成第{ch}章的详细骨架。"
+
+        # 添加前文上下文
+        prev_context = self._format_previous_skeletons(
+            max(1, ch - 15), ch - 1, existing_skeletons
+        )
+        if prev_context:
+            prompt += f"\n\n前文大纲摘要：\n{prev_context}"
+
+        try:
+            from novel_generator.core.ai_roles import AIRole
+
+            response = self.ai_role_manager.chat_completion(
+                role=AIRole.GENERATOR,
+                messages=[
+                    {"role": "system", "content": "你是一个专业的小说章节规划师。"},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=2000,
+            )
+
+            # 解析单章响应
+            return self._parse_single_chapter_response(response)
+        except Exception as e:
+            self.logger.error(f"单章生成失败: {e}")
+            return None
+
+    def _parse_single_chapter_response(self, response: str) -> Optional[Dict[str, Any]]:
+        """解析单章响应"""
+        try:
+            cleaned = self._clean_markdown_response(response)
+            data = json.loads(cleaned)
+
+            # 尝试获取第一个章节数据
+            for key, value in data.items():
+                if "章" in key and isinstance(value, dict):
+                    return value
+
+            # 如果不是JSON对象，返回整个数据
+            if isinstance(data, dict):
+                return data
+
+            return None
+        except:
+            return None
+
+    def _save_checkpoint(
+        self, chapter: int, skeletons: Dict[str, Any]
+    ) -> None:
+        """保存检查点用于恢复"""
+        checkpoint = {
+            "chapter": chapter,
+            "window_start": self.window_start,
+            "messages": self.messages,
+            "skeletons": skeletons,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        checkpoint_file = self.output_dir / f"checkpoint_ch{chapter:04d}.json"
+        try:
+            with open(checkpoint_file, "w", encoding="utf-8") as f:
+                json.dump(checkpoint, f, ensure_ascii=False, indent=2)
+            self.logger.debug(f"检查点已保存: {checkpoint_file}")
+        except Exception as e:
+            self.logger.warning(f"保存检查点失败: {e}")
+
+    def resume_from_checkpoint(
+        self, checkpoint_file: Path
+    ) -> Tuple[int, Dict[str, Any]]:
+        """从检查点恢复"""
+        with open(checkpoint_file, "r", encoding="utf-8") as f:
+            checkpoint = json.load(f)
+
+        self.window_start = checkpoint["window_start"]
+        self.messages = checkpoint["messages"]
+
+        return checkpoint["chapter"], checkpoint["skeletons"]
+
+    def _trim_conversation_if_needed(self) -> None:
+        """修剪过长的对话历史"""
+        # 估算token数（中文字符数 * 1.5）
+        total_chars = sum(len(m.get("content", "")) for m in self.messages)
+        estimated_tokens = total_chars * 1.5
+
+        # 如果超过800K token，修剪早期的user/assistant对
+        max_tokens = getattr(
+            self.config.get("generation", {}),
+            "max_conversation_tokens",
+            800000,
+        )
+
+        if estimated_tokens > max_tokens:
+            self.logger.warning(
+                f"对话历史过长({estimated_tokens:.0f} tokens)，修剪中..."
+            )
+            # 保留system和最近的消息
+            while len(self.messages) > 20:  # 保留最近10轮对话
+                if len(self.messages) > 2:
+                    self.messages.pop(1)  # 移除最早的user
+                    self.messages.pop(1)  # 移除最早的assistant
+                else:
+                    break
+
+
 class OutlineGenerator:
     """大纲生成器（两阶段：幕规划 → 章骨架，骨架直接驱动扩写）"""
 
@@ -796,15 +1467,24 @@ class OutlineGenerator:
         num_acts: int = 0,
         chapter_range: Optional[Tuple[int, int]] = None,
         batch_size: int = None,
+        conversation_window: int = None,
+        resume: bool = False,
     ) -> Dict[str, Any]:
         """
         两阶段大纲生成（幕规划 → 章骨架），骨架直接驱动扩写。
+        使用滑动窗口多轮模式。
 
-        流程:
-        1. Stage 1: 幕级规划（可复用，已存在则跳过）
-        2. Stage 2: 章级骨架（增量，跳过已生成）
+        Args:
+            core_setting: 核心设定
+            overall_outline: 整体大纲
+            num_acts: 幕数
+            chapter_range: 章节范围元组 (start, end)
+            batch_size: 每批生成章节数
+            conversation_window: 对话窗口大小
+            resume: 是否从检查点恢复
 
-        返回: Dict 章级骨架（即最终大纲）
+        Returns:
+            Dict: 章级骨架（最终大纲）
         """
         self.logger.info("开始两阶段大纲生成（支持增量）")
 
@@ -829,14 +1509,93 @@ class OutlineGenerator:
             self._save_act_plan(act_plan)
             self.logger.info("幕规划生成完成")
 
-        # Stage 2: 章级骨架（增量生成，批次模式）
+        # Stage 2: 章级骨架生成（滑动窗口多轮模式）
+        return self._generate_sliding_window_skeletons(
+            core_setting, overall_outline, act_plan,
+            chapter_range, batch_size, conversation_window, resume
+        )
+
+    def _generate_sliding_window_skeletons(
+        self,
+        core_setting: Dict[str, Any],
+        overall_outline: Dict[str, Any],
+        act_plan: Dict[str, Any],
+        chapter_range: Tuple[int, int],
+        batch_size: int,
+        conversation_window: int,
+        resume: bool,
+    ) -> Dict[str, Any]:
+        """使用滑动窗口多轮模式生成章级骨架"""
+        start_ch, end_ch = chapter_range
+
+        # 从配置获取默认值
+        gen_config = self.config.get("generation", {})
+        batch_size = batch_size or gen_config.get("skeleton_batch_size", 10)
+        conversation_window = conversation_window or gen_config.get("conversation_window", 100)
+
+        # 加载已存在的骨架
+        existing_skeletons = self._load_existing_skeletons()
+
+        # 检查是否需要从检查点恢复
+        start_from = start_ch
+        if resume:
+            checkpoint_ch, checkpoint_skeletons = self._find_latest_checkpoint()
+            if checkpoint_ch and checkpoint_ch >= start_ch:
+                self.logger.info(f"从检查点恢复: 第{checkpoint_ch}章")
+                start_from = checkpoint_ch + 1
+                existing_skeletons.update(checkpoint_skeletons)
+
+        # 检查是否已全部完成
+        first_missing = self._get_first_missing_chapter(
+            existing_skeletons, start_from, end_ch
+        )
+        if first_missing > end_ch:
+            self.logger.info(f"章级骨架已完整，范围 {start_from}-{end_ch} 全部存在")
+            return existing_skeletons
+
+        self.logger.info(
+            f"从第 {first_missing} 章开始生成骨架（滑动窗口={conversation_window}，批次={batch_size}）"
+        )
+
+        # 创建滑动窗口生成器
+        generator = SlidingWindowSkeletonGenerator(
+            config=self.config,
+            ai_role_manager=self.ai_role_manager,
+            act_plan=act_plan,
+            core_setting=core_setting,
+            overall_outline=overall_outline,
+            output_dir=self.output_dir,
+            conversation_window=conversation_window,
+            batch_size=batch_size,
+        )
+
+        # 生成骨架
+        final_skeletons = generator.generate_skeletons(
+            chapter_range=(first_missing, end_ch),
+            existing_skeletons=existing_skeletons if first_missing > start_ch else None,
+        )
+
+        # 合并结果
+        existing_skeletons.update(final_skeletons)
+        self._save_skeletons(existing_skeletons)
+
+        self.logger.info(f"两阶段大纲生成完成，共{len(existing_skeletons)}章")
+        return existing_skeletons
+
+    def _generate_batch_skeletons(
+        self,
+        core_setting: Dict[str, Any],
+        overall_outline: Dict[str, Any],
+        act_plan: Dict[str, Any],
+        chapter_range: Tuple[int, int],
+        batch_size: int,
+    ) -> Dict[str, Any]:
+        """使用传统批次模式生成章级骨架"""
         self.logger.info("Stage 2: 章级骨架生成（批次增量）")
         existing_skeletons = self._load_existing_skeletons()
 
-        gen_config = self.config.get("generation", {})
-        # 使用传入的 batch_size 或从配置读取
-        batch_size = batch_size or gen_config.get("skeleton_batch_size", 10)
-        context_window = gen_config.get("skeleton_context_window", 15)
+        start_ch, end_ch = chapter_range
+        context_window = self.config.get("generation", {}).get("skeleton_context_window", 15)
 
         skeleton_generator = ChapterSkeletonGenerator(
             self.config, self.ai_role_manager, act_plan,
@@ -852,7 +1611,9 @@ class OutlineGenerator:
         else:
             self.logger.info(f"从第 {first_missing} 章开始生成骨架（批次大小={batch_size}, 上下文窗口={context_window}）")
 
-            chapters_per_act = total_chapters // num_acts
+            total_chapters = end_ch
+            num_acts = len(act_plan.get("幕规划", {}))
+            chapters_per_act = total_chapters // max(num_acts, 1)
 
             for act_num in range(1, num_acts + 1):
                 act_start = (act_num - 1) * chapters_per_act + 1
@@ -888,6 +1649,22 @@ class OutlineGenerator:
 
         self.logger.info(f"两阶段大纲生成完成，共{len(existing_skeletons)}章")
         return existing_skeletons
+
+    def _find_latest_checkpoint(self) -> Tuple[Optional[int], Dict[str, Any]]:
+        """查找最新的检查点"""
+        checkpoint_files = list(self.output_dir.glob("checkpoint_ch*.json"))
+        if not checkpoint_files:
+            return None, {}
+
+        # 按文件名排序，取最后一个
+        latest = max(checkpoint_files, key=lambda p: p.name)
+        try:
+            with open(latest, "r", encoding="utf-8") as f:
+                checkpoint = json.load(f)
+            return checkpoint.get("chapter", 0), checkpoint.get("skeletons", {})
+        except Exception as e:
+            self.logger.warning(f"加载检查点失败: {e}")
+            return None, {}
 
     def _extract_chapter_number(self, chapter_key: str) -> int:
         """从章节键提取章节号"""
