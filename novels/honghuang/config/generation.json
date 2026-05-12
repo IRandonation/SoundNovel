@@ -5,7 +5,14 @@
   "draft_window": 10,
   "conversation_window": 100,
   "skeleton_batch_size": 10,
+  "summary_window": 100,
+  "summary_batch_size": 50,
   "enable_act_plan_injection": true,
   "save_conversation_checkpoints": true,
-  "max_conversation_tokens": 800000
+  "max_conversation_tokens": 800000,
+  "outline": {
+    "max_retries": 5,
+    "fallback_sizes": [50, 10, 1],
+    "verify_complete": true
+  }
 }

@@ -137,11 +137,61 @@ def create_parser() -> argparse.ArgumentParser:
         help='对话窗口大小（默认: 100章）'
     )
     outline_parser.add_argument(
-        '--resume', '-r',
+        '--skip-summary',
         action='store_true',
-        help='从上次检查点恢复生成'
+        help='跳过梗概依赖检查（不使用梗概上下文）'
     )
     outline_parser.set_defaults(func=commands.outline)
+
+    # act-plan 命令（Stage 1）
+    act_plan_parser = subparsers.add_parser(
+        'act-plan',
+        help='生成幕规划（Stage 1）',
+        description='仅执行幕级规划，生成 act_plan.json'
+    )
+    act_plan_parser.add_argument(
+        '--num-acts', '-a',
+        type=int,
+        default=0,
+        help='幕数（默认: 从 overall_outline.yaml 自动提取）'
+    )
+    act_plan_parser.add_argument(
+        '--force', '-f',
+        action='store_true',
+        help='强制重新生成（覆盖已有幕规划）'
+    )
+    act_plan_parser.set_defaults(func=commands.act_plan)
+
+    # chapter-summary 命令（Stage 1.5）
+    summary_parser = subparsers.add_parser(
+        'chapter-summary',
+        help='生成章节梗概（Stage 1.5）',
+        description='仅执行章节梗概生成，生成 chapter_summary.json（依赖 act_plan.json）'
+    )
+    summary_parser.add_argument(
+        '--start', '-s',
+        type=int,
+        default=1,
+        help='起始章节号（默认: 1）'
+    )
+    summary_parser.add_argument(
+        '--end', '-e',
+        type=int,
+        default=0,
+        help='结束章节号（默认: 总章节数）'
+    )
+    summary_parser.add_argument(
+        '--batch-size', '-b',
+        type=int,
+        default=150,
+        help='梗概批次大小（默认: 150）'
+    )
+    summary_parser.add_argument(
+        '--force', '-f',
+        action='store_true',
+        help='强制重新生成指定范围'
+    )
+    summary_parser.set_defaults(func=commands.chapter_summary)
 
     # expand 命令
     expand_parser = subparsers.add_parser(

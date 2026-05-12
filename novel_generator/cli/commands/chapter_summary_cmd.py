@@ -1,25 +1,21 @@
 """
-大纲生成命令
+章节梗概命令
 
-仅执行 Stage 2：生成章骨架（outline.json）
-依赖：需要已有幕规划（act_plan.json）和章节梗概（chapter_summary.json）
+仅执行 Stage 1.5：生成章节梗概（chapter_summary.json）
+依赖：需要已有幕规划（act_plan.json）
 """
 
 import argparse
 import sys
+import json
 from pathlib import Path
-from typing import Optional
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-import json
 from novel_generator.core.outline_generator import OutlineGenerator
 from novel_generator.config.settings import Settings
-from novel_generator.utils.common import (
-    get_project_root, ensure_directories
-)
 from novel_generator.cli.utils import (
     print_success, print_error, print_info, print_warning,
     setup_cli_logging, get_config_manager
@@ -28,7 +24,7 @@ from novel_generator.cli.utils import (
 
 def run(args: argparse.Namespace) -> int:
     """
-    执行章骨架生成（Stage 2，需要前置依赖）
+    执行章节梗概生成（Stage 1.5）
 
     Args:
         args: 命令行参数
@@ -38,16 +34,15 @@ def run(args: argparse.Namespace) -> int:
     """
     logger = setup_cli_logging()
 
-    print_info("开始章骨架生成（Stage 2）...")
+    print_info("开始章节梗概生成（Stage 1.5）...")
 
     try:
         config_manager = get_config_manager(novel_id=getattr(args, 'novel_id', None))
-        gen_config = config_manager.get_generation_config()
 
         paths = config_manager.get_novel_paths()
         outline_dir = paths["outline_dir"]
 
-        # Check dependency: act_plan.json
+        # Check dependency: act_plan.json must exist
         act_plan_file = outline_dir / "act_plan.json"
         if not act_plan_file.exists():
             print_error("幕规划不存在，请先执行 'soundnovel act-plan' 命令")
@@ -58,17 +53,6 @@ def run(args: argparse.Namespace) -> int:
             act_plan = json.load(f)
 
         print_info(f"幕规划已加载: {act_plan_file}")
-
-        # Check dependency: chapter_summary.json (optional)
-        summary_file = outline_dir / "chapter_summary.json"
-        summaries = {}
-        if summary_file.exists():
-            with open(summary_file, "r", encoding="utf-8") as f:
-                summaries = json.load(f)
-            print_info(f"章节梗概已加载: {summary_file}（共{len(summaries)}章）")
-        elif not getattr(args, 'skip_summary', False):
-            print_warning("章节梗概不存在，建议先执行 'soundnovel chapter-summary' 命令")
-            print_warning("使用 --skip-summary 参数可跳过梗概依赖继续生成")
 
         # Load source files
         core_setting_path = paths["core_setting"]
@@ -97,7 +81,7 @@ def run(args: argparse.Namespace) -> int:
 
         print_info("核心设定和整体大纲加载完成")
 
-        # Use API config for settings
+        # Use API config
         api_config = config_manager.get_api_config()
         settings = Settings(api_config)
         settings.validate()
@@ -106,10 +90,10 @@ def run(args: argparse.Namespace) -> int:
         outline_gen = OutlineGenerator(api_config, output_dir=outline_dir)
 
         total_chapters = outline_gen.extract_total_chapters(overall_outline)
-        print_info(f"检测到总章节数: {total_chapters}")
 
+        # Determine chapter range
         start_ch = args.start if args.start else 1
-        end_ch = args.end if args.end else total_chapters
+        end_ch = args.end if args.end and args.end > 0 else total_chapters
 
         if start_ch < 1 or end_ch > total_chapters or start_ch > end_ch:
             print_error(f"无效的章节范围: {start_ch}-{end_ch} (有效范围: 1-{total_chapters})")
@@ -117,39 +101,52 @@ def run(args: argparse.Namespace) -> int:
 
         print_info(f"生成章节范围: 第{start_ch}章 - 第{end_ch}章")
 
-        # Check existing skeletons
-        skeletons_exists = outline_gen.skeletons_file.exists()
-        print_info("当前进度:")
-        print(f"  - 幕规划: 已存在")
-        print(f"  - 章节梗概: {'已存在' if summaries else '不存在'}")
-        print(f"  - 章级骨架: {'已存在' if skeletons_exists else '待生成'}")
+        # Check existing summaries
+        summary_file = outline_gen.summary_file
+        if summary_file.exists() and not args.force:
+            with open(summary_file, "r", encoding="utf-8") as f:
+                existing_summaries = json.load(f)
 
-        # Execute Stage 2 only
+            # Check if range is complete
+            missing = []
+            for ch in range(start_ch, end_ch + 1):
+                if f"第{ch}章" not in existing_summaries:
+                    missing.append(ch)
+
+            if not missing:
+                print_warning(f"章节梗概已完整: 第{start_ch}-{end_ch}章")
+                print_info("使用 --force 参数强制重新生成指定范围")
+                return 0
+            else:
+                print_info(f"已存在部分梗概，缺少 {len(missing)} 章，将补充生成")
+        elif args.force:
+            print_warning("--force 参数将重新生成指定范围的所有梗概")
+
+        # Execute Stage 1.5 only
         batch_size = args.batch_size if args.batch_size else None
-        window = args.window if args.window else None
 
-        final_outline = outline_gen.generate_skeletons_only(
+        summaries = outline_gen.generate_summaries_only(
             core_setting=core_setting,
             overall_outline=overall_outline,
             act_plan=act_plan,
-            summaries=summaries,
             chapter_range=(start_ch, end_ch),
             batch_size=batch_size,
-            conversation_window=window,
+            force_regenerate=args.force,
         )
 
-        # Update session
-        config_manager.update_progress("outline", start_ch, end_ch, str(outline_gen.outline_file.resolve()))
+        # Update progress
+        config_manager.update_progress("chapter_summary", start_ch, end_ch)
 
         print()
-        print_success(f"章骨架生成完成！共 {len(final_outline)} 章")
+        print_success("章节梗概生成完成！")
         print()
         print_info("生成文件:")
-        print(f"  {outline_gen.outline_file}")
+        print(f"  {outline_gen.summary_file}")
+        print_info(f"共生成 {len(summaries)} 章梗概")
         print()
         print_info("下一步操作:")
-        print("  1. 审阅生成的骨架内容")
-        print("  2. 运行 'soundnovel expand --chapter 1' 开始扩写章节")
+        print("  1. 审阅每章梗概是否合理")
+        print("  2. 运行 'soundnovel outline' 生成详细骨架")
 
         return 0
 
@@ -157,7 +154,7 @@ def run(args: argparse.Namespace) -> int:
         print_error(f"文件未找到: {e}")
         return 1
     except Exception as e:
-        print_error(f"生成章骨架失败: {e}")
+        print_error(f"生成章节梗概失败: {e}")
         import traceback
         traceback.print_exc()
         return 1

@@ -25,12 +25,13 @@
 - **资源隔离**: 每个小说完全独立，互不干扰
 - **逻辑复用**: 核心生成逻辑统一维护
 
-### 2. 两阶段流水线架构
+### 2. 三阶段流水线架构
 
 ```
 大纲生成阶段
-    ├── 幕级规划（注入网文节奏设计原则）
-    └── 章级骨架（章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
+    ├── Stage 1: 幕级规划（注入网文节奏设计原则）
+    ├── Stage 1.5: 章节梗概（批量生成章节核心内容）
+    └── Stage 2: 章级骨架（章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
             ↓
 章节扩写阶段（上下文注入）
     ├── 前30章大纲上下文（骨架级摘要）
@@ -198,29 +199,62 @@ uv run soundnovel.py novel import <zip_path>
 
 **当前小说**: 记录在 `novels/.current` 文件中
 
-#### 3. 逻辑板块命令 (`cli`)
+#### 3. 逻辑板块命令
 
 执行生成逻辑（操作当前小说或指定--novel）：
 
 ```bash
-# 生成大纲（两阶段：幕级规划 + 章级骨架）
-uv run soundnovel.py cli outline
+# 生成大纲（三阶段：幕规划 → 章节梗概 → 章节骨架）
+uv run soundnovel.py cli outline                        # 完整流程
+uv run soundnovel.py cli outline --batch-size 20       # 每批20章
+uv run soundnovel.py cli outline --start 50 --end 100  # 指定范围
+uv run soundnovel.py cli outline --window 150          # 对话窗口150章
+uv run soundnovel.py cli outline --skip-summary        # 跳过梗概依赖
+
+# 分阶段大纲生成（调试用）
+uv run soundnovel.py cli act-plan                      # Stage 1: 幕规划
+uv run soundnovel.py cli act-plan --force              # 强制重新生成
+uv run soundnovel.py cli chapter-summary               # Stage 1.5: 章节梗概
+uv run soundnovel.py cli chapter-summary --batch-size 200  # 梗概批次大小
 
 # 扩写章节
-uv run soundnovel.py cli expand --chapter 1       # 单章
-uv run soundnovel.py cli expand --start 1 --end 10  # 范围
-uv run soundnovel.py cli continue                 # 从上次继续
-uv run soundnovel.py cli continue --cascade     # 级联重生成dirty章节
+uv run soundnovel.py cli expand --chapter 1            # 单章
+uv run soundnovel.py cli expand --start 1 --end 10     # 范围扩写
+uv run soundnovel.py cli expand --from-last            # 从上次继续
+uv run soundnovel.py cli expand --batch-size 5         # 每批5章
+uv run soundnovel.py cli expand --single               # 单章模式（禁用批量）
+uv run soundnovel.py cli expand --outline-window 50    # 大纲窗口50章
+uv run soundnovel.py cli expand --draft-window 15      # 正文窗口15章
+
+# 续写章节
+uv run soundnovel.py cli continue                      # 从上次位置继续
+uv run soundnovel.py cli continue --end 100            # 到第100章停止
+uv run soundnovel.py cli continue --cascade            # 级联重生成dirty章节
+uv run soundnovel.py cli continue --dry-run            # 仅显示计划（不执行）
 
 # 查看项目状态
-uv run soundnovel.py cli status
+uv run soundnovel.py cli status                        # 显示进度和章节状态
 
 # 标记章节修改类型
-cosmetic: 仅润色，不触发级联
-uv run soundnovel.py cli touch --chapter 15 --type content
+uv run soundnovel.py cli touch --chapter 15 --type content    # 内容变更（触发级联）
+uv run soundnovel.py cli touch --chapter 15 --type cosmetic   # 仅润色（不触发级联）
+uv run soundnovel.py cli touch --chapter 15 --type content --no-cascade  # 不触发级联
 
 # 重生成指定章节
-uv run soundnovel.py cli regenerate --chapters 12-14
+uv run soundnovel.py cli regenerate --chapters 12-14   # 范围重生成
+uv run soundnovel.py cli regenerate --chapter 15       # 单章重生成
+uv run soundnovel.py cli regenerate --chapters 12-14 --outline  # 仅重生成大纲
+uv run soundnovel.py cli regenerate --chapter 15 -y    # 跳过确认
+
+# 配置生成参数
+uv run soundnovel.py cli settings                      # 显示当前配置
+uv run soundnovel.py cli settings --interactive        # 交互式配置
+uv run soundnovel.py cli settings --show-file          # 显示完整配置文件
+uv run soundnovel.py cli settings --reset              # 重置为默认配置
+uv run soundnovel.py cli settings --outline-window 40  # 设置大纲窗口
+uv run soundnovel.py cli settings --draft-window 12    # 设置正文窗口
+uv run soundnovel.py cli settings --conversation-window 120  # 对话窗口（滑动窗口）
+uv run soundnovel.py cli settings --max-conversation-tokens 1000000  # token上限
 
 # 使用指定小说（不切换当前）
 uv run soundnovel.py cli expand --chapter 1 --novel <novel_id>
@@ -306,14 +340,18 @@ uv run soundnovel.py novel create
 ### 4. 生成大纲
 
 ```bash
-# 两阶段大纲生成（幕级规划 + 章级骨架）
+# 三阶段大纲生成（幕规划 → 章节梗概 → 章节骨架）
 uv run soundnovel.py cli outline
 
-# 产物保存在 novels/{novel_id}/outline/outline.json
+# 产物保存在 novels/{novel_id}/outline/
+# - act_plan.json: 幕级规划
+# - chapter_summary.json: 章节梗概
+# - skeletons.json: 章级骨架（最终大纲）
 ```
 
 大纲包含：
 - 幕级规划（含爽点战略布局）
+- 章节梗概（批量生成章节核心内容）
 - 章级骨架（章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
 
 ### 5. 扩写正文
@@ -384,9 +422,10 @@ uv run soundnovel.py novel import backup/honghuang_20250510.zip
             └── 调整爽点时机、修改情节设计
 
 系统阶段
-    ├── 1. 生成幕级规划
-    ├── 2. 生成章级骨架
-    └── 3. 上下文注入扩写
+    ├── 1. 生成幕级规划（Stage 1）
+    ├── 2. 生成章节梗概（Stage 1.5）
+    ├── 3. 生成章级骨架（Stage 2）
+    └── 4. 上下文注入扩写
             └── 30章大纲 + 10章正文 + 当前骨架
 
 迭代阶段
