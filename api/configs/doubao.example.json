@@ -1,0 +1,14 @@
+{
+  "id": "doubao",
+  "name": "豆包/火山引擎",
+  "provider": "doubao",
+  "api_key": "YOUR_DOUBAO_API_KEY_HERE",
+  "api_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+  "models": {
+    "expansion_model": "doubao-seed-2-0-lite-260215",
+    "outline_model": "doubao-seed-2-0-lite-260215"
+  },
+  "is_default": false,
+  "created_at": "2026-03-11T22:48:01",
+  "updated_at": "2026-05-10T21:22:28"
+}

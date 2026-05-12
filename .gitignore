@@ -2,6 +2,10 @@
 api_config.json
 config.json
 session.json
+api/configs/*.json
+
+# 保留示例配置文件
+!api/configs/*.example.json
 
 # Python缓存文件
 __pycache__/
