@@ -1,8 +1,8 @@
 """
 大纲生成命令
 
-仅执行 Stage 2：生成章骨架（outline.json）
-依赖：需要已有幕规划（act_plan.json）和章节梗概（chapter_summary.json）
+执行 Stage 2：生成章骨架（outline.json）
+依赖：章节梗概（chapter_summary.json，推荐但非强制）
 """
 
 import argparse
@@ -28,7 +28,7 @@ from novel_generator.cli.utils import (
 
 def run(args: argparse.Namespace) -> int:
     """
-    执行章骨架生成（Stage 2，需要前置依赖）
+    执行章骨架生成（Stage 2）
 
     Args:
         args: 命令行参数
@@ -47,19 +47,7 @@ def run(args: argparse.Namespace) -> int:
         paths = config_manager.get_novel_paths()
         outline_dir = paths["outline_dir"]
 
-        # Check dependency: act_plan.json
-        act_plan_file = outline_dir / "act_plan.json"
-        if not act_plan_file.exists():
-            print_error("幕规划不存在，请先执行 'soundnovel act-plan' 命令")
-            return 1
-
-        # Load act_plan
-        with open(act_plan_file, "r", encoding="utf-8") as f:
-            act_plan = json.load(f)
-
-        print_info(f"幕规划已加载: {act_plan_file}")
-
-        # Check dependency: chapter_summary.json (optional)
+        # Check dependency: chapter_summary.json (recommended but not required)
         summary_file = outline_dir / "chapter_summary.json"
         summaries = {}
         if summary_file.exists():
@@ -120,18 +108,16 @@ def run(args: argparse.Namespace) -> int:
         # Check existing skeletons
         skeletons_exists = outline_gen.skeletons_file.exists()
         print_info("当前进度:")
-        print(f"  - 幕规划: 已存在")
         print(f"  - 章节梗概: {'已存在' if summaries else '不存在'}")
         print(f"  - 章级骨架: {'已存在' if skeletons_exists else '待生成'}")
 
-        # Execute Stage 2 only
+        # Execute Stage 2
         batch_size = args.batch_size if args.batch_size else None
         window = args.window if args.window else None
 
         final_outline = outline_gen.generate_skeletons_only(
             core_setting=core_setting,
             overall_outline=overall_outline,
-            act_plan=act_plan,
             summaries=summaries,
             chapter_range=(start_ch, end_ch),
             batch_size=batch_size,

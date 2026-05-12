@@ -25,12 +25,11 @@
 - **资源隔离**: 每个小说完全独立，互不干扰
 - **逻辑复用**: 核心生成逻辑统一维护
 
-### 2. 三阶段流水线架构
+### 2. 两阶段流水线架构
 
 ```
 大纲生成阶段
-    ├── Stage 1: 幕级规划（注入网文节奏设计原则）
-    ├── Stage 1.5: 章节梗概（批量生成章节核心内容）
+    ├── Stage 1: 章节梗概（直接从 overall_outline.yaml 幕结构读取，批量生成章节核心内容）
     └── Stage 2: 章级骨架（章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
             ↓
 章节扩写阶段（上下文注入）
@@ -40,6 +39,8 @@
             ↓
     每章一次API调用，AI自然处理场景间过渡与节奏
 ```
+
+**幕信息不再由 LLM 生成**：作者在 `overall_outline.yaml` 的幕结构中手写 `核心冲突` / `情感基调` / `关键转折点`，下游直接消费，保真度更高。
 
 ### 3. 上下文注入系统
 
@@ -204,7 +205,7 @@ uv run soundnovel.py novel import <zip_path>
 执行生成逻辑（操作当前小说或指定--novel）：
 
 ```bash
-# 生成大纲（三阶段：幕规划 → 章节梗概 → 章节骨架）
+# 生成大纲（两阶段：章节梗概 → 章节骨架）
 uv run soundnovel.py cli outline                        # 完整流程
 uv run soundnovel.py cli outline --batch-size 20       # 每批20章
 uv run soundnovel.py cli outline --start 50 --end 100  # 指定范围
@@ -212,9 +213,7 @@ uv run soundnovel.py cli outline --window 150          # 对话窗口150章
 uv run soundnovel.py cli outline --skip-summary        # 跳过梗概依赖
 
 # 分阶段大纲生成（调试用）
-uv run soundnovel.py cli act-plan                      # Stage 1: 幕规划
-uv run soundnovel.py cli act-plan --force              # 强制重新生成
-uv run soundnovel.py cli chapter-summary               # Stage 1.5: 章节梗概
+uv run soundnovel.py cli chapter-summary               # Stage 1: 章节梗概
 uv run soundnovel.py cli chapter-summary --batch-size 200  # 梗概批次大小
 
 # 扩写章节
@@ -340,18 +339,16 @@ uv run soundnovel.py novel create
 ### 4. 生成大纲
 
 ```bash
-# 三阶段大纲生成（幕规划 → 章节梗概 → 章节骨架）
+# 两阶段大纲生成（章节梗概 → 章节骨架）
 uv run soundnovel.py cli outline
 
 # 产物保存在 novels/{novel_id}/outline/
-# - act_plan.json: 幕级规划
 # - chapter_summary.json: 章节梗概
-# - skeletons.json: 章级骨架（最终大纲）
+# - outline.json: 章级骨架（最终大纲）
 ```
 
 大纲包含：
-- 幕级规划（含爽点战略布局）
-- 章节梗概（批量生成章节核心内容）
+- 章节梗概（批量生成章节核心内容，幕信息从 overall_outline.yaml 直接读取）
 - 章级骨架（章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
 
 ### 5. 扩写正文
@@ -422,10 +419,9 @@ uv run soundnovel.py novel import backup/honghuang_20250510.zip
             └── 调整爽点时机、修改情节设计
 
 系统阶段
-    ├── 1. 生成幕级规划（Stage 1）
-    ├── 2. 生成章节梗概（Stage 1.5）
-    ├── 3. 生成章级骨架（Stage 2）
-    └── 4. 上下文注入扩写
+    ├── 1. 生成章节梗概（Stage 1）
+    ├── 2. 生成章级骨架（Stage 2）
+    └── 3. 上下文注入扩写
             └── 30章大纲 + 10章正文 + 当前骨架
 
 迭代阶段

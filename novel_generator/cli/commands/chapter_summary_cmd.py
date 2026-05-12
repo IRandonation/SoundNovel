@@ -1,8 +1,8 @@
 """
 章节梗概命令
 
-仅执行 Stage 1.5：生成章节梗概（chapter_summary.json）
-依赖：需要已有幕规划（act_plan.json）
+仅执行 Stage 1：生成章节梗概（chapter_summary.json）
+不依赖 act_plan.json，直接从 overall_outline.yaml 的幕结构读取幕信息。
 """
 
 import argparse
@@ -24,7 +24,7 @@ from novel_generator.cli.utils import (
 
 def run(args: argparse.Namespace) -> int:
     """
-    执行章节梗概生成（Stage 1.5）
+    执行章节梗概生成（Stage 1）
 
     Args:
         args: 命令行参数
@@ -34,25 +34,13 @@ def run(args: argparse.Namespace) -> int:
     """
     logger = setup_cli_logging()
 
-    print_info("开始章节梗概生成（Stage 1.5）...")
+    print_info("开始章节梗概生成（Stage 1）...")
 
     try:
         config_manager = get_config_manager(novel_id=getattr(args, 'novel_id', None))
 
         paths = config_manager.get_novel_paths()
         outline_dir = paths["outline_dir"]
-
-        # Check dependency: act_plan.json must exist
-        act_plan_file = outline_dir / "act_plan.json"
-        if not act_plan_file.exists():
-            print_error("幕规划不存在，请先执行 'soundnovel act-plan' 命令")
-            return 1
-
-        # Load act_plan
-        with open(act_plan_file, "r", encoding="utf-8") as f:
-            act_plan = json.load(f)
-
-        print_info(f"幕规划已加载: {act_plan_file}")
 
         # Load source files
         core_setting_path = paths["core_setting"]
@@ -107,7 +95,6 @@ def run(args: argparse.Namespace) -> int:
             with open(summary_file, "r", encoding="utf-8") as f:
                 existing_summaries = json.load(f)
 
-            # Check if range is complete
             missing = []
             for ch in range(start_ch, end_ch + 1):
                 if f"第{ch}章" not in existing_summaries:
@@ -122,13 +109,12 @@ def run(args: argparse.Namespace) -> int:
         elif args.force:
             print_warning("--force 参数将重新生成指定范围的所有梗概")
 
-        # Execute Stage 1.5 only
+        # Execute Stage 1
         batch_size = args.batch_size if args.batch_size else None
 
         summaries = outline_gen.generate_summaries_only(
             core_setting=core_setting,
             overall_outline=overall_outline,
-            act_plan=act_plan,
             chapter_range=(start_ch, end_ch),
             batch_size=batch_size,
             force_regenerate=args.force,

@@ -63,7 +63,6 @@ class NovelProject:
                 # 滑动窗口多轮配置（完全替换原有batch模式）
                 "conversation_window": 100,  # 对话窗口大小（章节数）
                 "skeleton_batch_size": 10,   # 每批生成章节数
-                "enable_act_plan_injection": True,  # 是否动态注入幕规划
                 "save_conversation_checkpoints": True,  # 是否保存检查点
                 "max_conversation_tokens": 800000,  # 单对话最大token数（触发修剪）
             }

@@ -143,30 +143,11 @@ def create_parser() -> argparse.ArgumentParser:
     )
     outline_parser.set_defaults(func=commands.outline)
 
-    # act-plan 命令（Stage 1）
-    act_plan_parser = subparsers.add_parser(
-        'act-plan',
-        help='生成幕规划（Stage 1）',
-        description='仅执行幕级规划，生成 act_plan.json'
-    )
-    act_plan_parser.add_argument(
-        '--num-acts', '-a',
-        type=int,
-        default=0,
-        help='幕数（默认: 从 overall_outline.yaml 自动提取）'
-    )
-    act_plan_parser.add_argument(
-        '--force', '-f',
-        action='store_true',
-        help='强制重新生成（覆盖已有幕规划）'
-    )
-    act_plan_parser.set_defaults(func=commands.act_plan)
-
-    # chapter-summary 命令（Stage 1.5）
+    # chapter-summary 命令（Stage 1）
     summary_parser = subparsers.add_parser(
         'chapter-summary',
-        help='生成章节梗概（Stage 1.5）',
-        description='仅执行章节梗概生成，生成 chapter_summary.json（依赖 act_plan.json）'
+        help='生成章节梗概（Stage 1）',
+        description='仅执行章节梗概生成，生成 chapter_summary.json'
     )
     summary_parser.add_argument(
         '--start', '-s',

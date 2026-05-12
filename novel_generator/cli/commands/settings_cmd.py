@@ -34,7 +34,6 @@ GEN_PARAMS = {
     "skeleton_batch_size": "骨架批次大小 (单次API调用生成的章数)",
     # 滑动窗口多轮配置
     "conversation_window": "对话窗口大小 (累积的上下文章数)",
-    "enable_act_plan_injection": "是否动态注入幕规划",
     "save_conversation_checkpoints": "是否保存检查点",
     "max_conversation_tokens": "单对话最大token数 (触发修剪)",
 }
@@ -232,7 +231,6 @@ def run(args):
                         "skeleton_batch_size": 10,
                         # 滑动窗口多轮配置
                         "conversation_window": 100,
-                        "enable_act_plan_injection": True,
                         "save_conversation_checkpoints": True,
                         "max_conversation_tokens": 800000,
                     }
@@ -249,7 +247,7 @@ def run(args):
         getattr(args, attr, None) is not None
         for attr in [
             "default_words", "outline_window", "draft_window", "skeleton_batch_size",
-            "conversation_window", "enable_act_plan_injection", "save_conversation_checkpoints", "max_conversation_tokens",
+            "conversation_window", "save_conversation_checkpoints", "max_conversation_tokens",
         ]
     ):
         novel_id = _get_current_novel_id(project_root)
@@ -272,8 +270,6 @@ def run(args):
             # 滑动窗口多轮配置
             if getattr(args, "conversation_window", None) is not None:
                 updates["conversation_window"] = args.conversation_window
-            if getattr(args, "enable_act_plan_injection", None) is not None:
-                updates["enable_act_plan_injection"] = args.enable_act_plan_injection
             if getattr(args, "save_conversation_checkpoints", None) is not None:
                 updates["save_conversation_checkpoints"] = args.save_conversation_checkpoints
             if getattr(args, "max_conversation_tokens", None) is not None:
@@ -337,13 +333,6 @@ def add_parser(subparsers):
         type=int,
         dest="conversation_window",
         help="设置对话窗口大小：累积的上下文章数（默认100）"
-    )
-
-    parser.add_argument(
-        "--enable-act-plan-injection",
-        type=lambda x: x.lower() in ('true', '1', 'yes'),
-        dest="enable_act_plan_injection",
-        help="设置是否动态注入幕规划: true/false（默认true）"
     )
 
     parser.add_argument(
