@@ -1509,13 +1509,14 @@ class OutlineGenerator:
         self,
         summary_generator: ChapterSummaryGenerator,
         chapter_range: Tuple[int, int],
+        overall_outline: Dict[str, Any],
     ) -> Dict[str, Any]:
         """按幕批次生成章节梗概"""
         start_ch, end_ch = chapter_range
         all_summaries = self._load_existing_summaries()
 
         # 解析幕的章节范围（从overall_outline）
-        act_ranges = self._parse_act_ranges_from_outline()
+        act_ranges = self._parse_act_ranges_from_outline(overall_outline)
 
         for act_num, (act_start, act_end) in act_ranges.items():
             # 检查是否在目标范围内
@@ -1541,10 +1542,10 @@ class OutlineGenerator:
 
         return all_summaries
 
-    def _parse_act_ranges_from_outline(self) -> Dict[int, Tuple[int, int]]:
+    def _parse_act_ranges_from_outline(self, overall_outline: Dict[str, Any]) -> Dict[int, Tuple[int, int]]:
         """从overall_outline的幕结构中解析章节范围"""
         ranges = {}
-        acts = self.overall_outline.get("幕结构", {})
+        acts = overall_outline.get("幕结构", {})
 
         for i, (act_name, act_data) in enumerate(acts.items(), 1):
             chapter_range = act_data.get("章节范围", "")
@@ -1631,7 +1632,7 @@ class OutlineGenerator:
             batch_size=summary_batch_size,
         )
         summaries = self._generate_summaries_by_act(
-            summary_generator, chapter_range
+            summary_generator, chapter_range, overall_outline
         )
         self.logger.info(f"章节梗概生成完成，共{len(summaries)}章")
         return summaries

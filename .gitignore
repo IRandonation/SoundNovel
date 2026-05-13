@@ -132,6 +132,12 @@ dmypy.json
 .DS_Store
 Thumbs.db
 
+# novels 目录 - 忽略所有小说内容（个人创作）
+novels/*/
+!novels/.gitkeep
+!novels/.current
+
+# 旧版 user 目录规则（已废弃，保留兼容）
 # 配置与敏感内容
 user/source/core_setting.yaml
 user/source/overall_outline.yaml
