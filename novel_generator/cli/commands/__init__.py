@@ -11,6 +11,5 @@ from novel_generator.cli.commands.touch import run as touch
 from novel_generator.cli.commands.regenerate import run as regenerate
 from novel_generator.cli.commands.api_commands import run as api
 from novel_generator.cli.commands.novel_commands import run as novel
-from novel_generator.cli.commands.chapter_summary_cmd import run as chapter_summary
 
-__all__ = ['outline', 'expand', 'status', 'continue_write', 'settings', 'touch', 'regenerate', 'api', 'novel', 'chapter_summary']
+__all__ = ['outline', 'expand', 'status', 'continue_write', 'settings', 'touch', 'regenerate', 'api', 'novel']

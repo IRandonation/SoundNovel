@@ -25,12 +25,11 @@
 - **资源隔离**: 每个小说完全独立，互不干扰
 - **逻辑复用**: 核心生成逻辑统一维护
 
-### 2. 两阶段流水线架构
+### 2. 单阶段流水线架构
 
 ```
 大纲生成阶段
-    ├── Stage 1: 章节梗概（直接从 overall_outline.yaml 幕结构读取，批量生成章节核心内容）
-    └── Stage 2: 章级骨架（章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
+    └── 章级骨架（从 chapter_plan.yaml 5章区间规划读取，AI自动拆解分配到各章节）
             ↓
 章节扩写阶段（上下文注入）
     ├── 前30章大纲上下文（骨架级摘要）
@@ -40,7 +39,7 @@
     每章一次API调用，AI自然处理场景间过渡与节奏
 ```
 
-**幕信息不再由 LLM 生成**：作者在 `overall_outline.yaml` 的幕结构中手写 `核心冲突` / `情感基调` / `关键转折点`，下游直接消费，保真度更高。
+**规划信息由作者手写**：作者在 `chapter_plan.yaml` 中按5章间隔填写核心内容（箭头链接事件如"A→B→C→D→E"），AI接收后自动拆解分配到各章节骨架，保真度更高。
 
 ### 3. 上下文注入系统
 
@@ -82,7 +81,7 @@ SoundNovel/
 │   └── {novel_id}/             # 单个小说项目（完全隔离）
 │       ├── source/             # 用户小说源材料
 │       │   ├── core_setting.yaml      # 世界观、人物、伏笔设定
-│       │   └── overall_outline.yaml   # 高层故事结构
+│       │   └── chapter_plan.yaml      # 5章区间规划（替代幕结构）
 │       ├── prompts/            # 小说专属提示词模板
 │       │   ├── system_prompts.yaml    # AI角色定义
 │       │   ├── style_guide.yaml       # 风格指导（需根据小说修改）
@@ -205,16 +204,11 @@ uv run soundnovel.py novel import <zip_path>
 执行生成逻辑（操作当前小说或指定--novel）：
 
 ```bash
-# 生成大纲（两阶段：章节梗概 → 章节骨架）
+# 生成大纲（单阶段：从chapter_plan生成章骨架）
 uv run soundnovel.py cli outline                        # 完整流程
 uv run soundnovel.py cli outline --batch-size 20       # 每批20章
 uv run soundnovel.py cli outline --start 50 --end 100  # 指定范围
 uv run soundnovel.py cli outline --window 150          # 对话窗口150章
-uv run soundnovel.py cli outline --skip-summary        # 跳过梗概依赖
-
-# 分阶段大纲生成（调试用）
-uv run soundnovel.py cli chapter-summary               # Stage 1: 章节梗概
-uv run soundnovel.py cli chapter-summary --batch-size 200  # 梗概批次大小
 
 # 扩写章节
 uv run soundnovel.py cli expand --chapter 1            # 单章
@@ -287,7 +281,7 @@ uv run soundnovel.py novel create
 
 **创建后自动生成**:
 - `source/core_setting.yaml` - 核心设定模板
-- `source/overall_outline.yaml` - 整体大纲模板
+- `source/chapter_plan.yaml` - 章节规划模板（5章区间）
 - `prompts/style_guide.yaml` - 风格指导（需根据小说修改）
 - `prompts/system_prompts.yaml` - AI角色定义
 - `config/*.json` - 配置和状态文件
@@ -317,21 +311,25 @@ uv run soundnovel.py novel create
   - 主角血脉（第10章觉醒，第50章揭示）
 ```
 
-编辑 `novels/{novel_id}/source/overall_outline.yaml`:
+编辑 `novels/{novel_id}/source/chapter_plan.yaml`:
 
 ```yaml
-整体结构:
-  总章节: 100章
-  分幕: 3幕
+总章节数: 100
 
-幕结构:
-  第1幕（崛起）:
-    章节范围: 第1-30章
-    核心剧情: 主角获得金手指，进入宗门展现实力
-    爽点布局:
-      - 第5章: 打脸挑衅者
-      - 第15章: 突破境界震惊全场
-      - 第25章: 宗门大比夺冠
+故事概述: "主角为报灭门之仇踏上修仙路，最终成为一代宗师"
+
+剧情规划:
+  第1-5章:
+    核心内容: "家族灭门→幸存逃生→获上古传承→初入宗门→展露天赋"
+    情绪基调: "绝望悲痛→逃生紧张→传承惊喜→入门期待"
+    关键约束: ["金手指不能暴露", "低调行事"]
+
+  第6-10章:
+    核心内容: "宗门修炼→遭遇挑衅→低调应对→暗中突破→打脸挑衅者"
+    情绪基调: "修炼专注→挑衅愤怒→隐忍→突破畅快→打脸爽感"
+    关键约束: ["不能暴露真实实力"]
+
+  # ... 继续填写更多5章区间
 ```
 
 **重要**: 编辑 `prompts/style_guide.yaml` 调整风格指导，使其符合你的小说类型！
@@ -339,17 +337,15 @@ uv run soundnovel.py novel create
 ### 4. 生成大纲
 
 ```bash
-# 两阶段大纲生成（章节梗概 → 章节骨架）
+# 单阶段大纲生成（chapter_plan → 章骨架）
 uv run soundnovel.py cli outline
 
 # 产物保存在 novels/{novel_id}/outline/
-# - chapter_summary.json: 章节梗概
 # - outline.json: 章级骨架（最终大纲）
 ```
 
 大纲包含：
-- 章节梗概（批量生成章节核心内容，幕信息从 overall_outline.yaml 直接读取）
-- 章级骨架（章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
+- 章级骨架（从5章区间规划自动拆解，包含章节定位/因果链/场景概览/情绪曲线/伏笔处理/结尾卡点）
 
 ### 5. 扩写正文
 
@@ -413,15 +409,14 @@ uv run soundnovel.py novel import backup/honghuang_20250510.zip
     │       └── uv run soundnovel.py novel create
     ├── 3. 填写设定
     │       ├── source/core_setting.yaml
-    │       ├── source/overall_outline.yaml
+    │       ├── source/chapter_plan.yaml（5章区间规划）
     │       └── prompts/style_guide.yaml（重要！）
     └── 4. 审查大纲
             └── 调整爽点时机、修改情节设计
 
 系统阶段
-    ├── 1. 生成章节梗概（Stage 1）
-    ├── 2. 生成章级骨架（Stage 2）
-    └── 3. 上下文注入扩写
+    ├── 1. 生成章级骨架（从chapter_plan自动拆解）
+    └── 2. 上下文注入扩写
             └── 30章大纲 + 10章正文 + 当前骨架
 
 迭代阶段

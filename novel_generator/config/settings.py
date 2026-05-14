@@ -91,7 +91,7 @@ class GenerationConfig:
     stage4_use_regular_model: bool = True
     stage5_use_regular_model: bool = True
     context_chapters: int = 10
-    default_word_count: int = 1500
+    default_word_count: int = 3000  # 提高默认字数目标
     copyright_bypass: bool = True
     world_style: str = ""
     outline_window: int = 30

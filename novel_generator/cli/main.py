@@ -125,54 +125,12 @@ def create_parser() -> argparse.ArgumentParser:
         help='结束章节号'
     )
     outline_parser.add_argument(
-        '--num-acts', '-a',
-        type=int,
-        default=3,
-        help='幕数（默认: 3）'
-    )
-    outline_parser.add_argument(
         '--window', '-w',
         type=int,
         default=None,
         help='对话窗口大小（默认: 100章）'
     )
-    outline_parser.add_argument(
-        '--skip-summary',
-        action='store_true',
-        help='跳过梗概依赖检查（不使用梗概上下文）'
-    )
     outline_parser.set_defaults(func=commands.outline)
-
-    # chapter-summary 命令（Stage 1）
-    summary_parser = subparsers.add_parser(
-        'chapter-summary',
-        help='生成章节梗概（Stage 1）',
-        description='仅执行章节梗概生成，生成 chapter_summary.json'
-    )
-    summary_parser.add_argument(
-        '--start', '-s',
-        type=int,
-        default=1,
-        help='起始章节号（默认: 1）'
-    )
-    summary_parser.add_argument(
-        '--end', '-e',
-        type=int,
-        default=0,
-        help='结束章节号（默认: 总章节数）'
-    )
-    summary_parser.add_argument(
-        '--batch-size', '-b',
-        type=int,
-        default=150,
-        help='梗概批次大小（默认: 150）'
-    )
-    summary_parser.add_argument(
-        '--force', '-f',
-        action='store_true',
-        help='强制重新生成指定范围'
-    )
-    summary_parser.set_defaults(func=commands.chapter_summary)
 
     # expand 命令
     expand_parser = subparsers.add_parser(

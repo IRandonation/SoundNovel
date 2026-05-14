@@ -247,7 +247,7 @@ def validate_project_structure(
     if required_files is None:
         required_files = [
             "core_setting.yaml",
-            "overall_outline.yaml",
+            "chapter_plan.yaml",
         ]
 
     paths = get_current_novel_paths(project_root)
@@ -346,37 +346,31 @@ def load_core_setting(project_root: Optional[Path] = None) -> Dict[str, Any]:
 
     Returns:
         Dict[str, Any]: 核心设定字典
+
+    Raises:
+        FileNotFoundError: 当小说路径未配置或设定文件不存在时
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     if project_root is None:
         project_root = get_project_root()
 
     paths = get_current_novel_paths(project_root)
     if not paths:
-        return {}
+        logger.error("未找到当前小说路径，请检查 novels/.current 文件")
+        raise FileNotFoundError("未选择小说，请先运行 'soundnovel novel select'")
 
     setting_path = paths.get("source_dir", Path()) / "core_setting.yaml"
-    return load_yaml_file(setting_path, default={})
+    if not setting_path.exists():
+        logger.error(f"核心设定文件不存在: {setting_path}")
+        raise FileNotFoundError(f"核心设定文件不存在: {setting_path}")
 
+    data = load_yaml_file(setting_path, default={})
+    if not data:
+        logger.warning(f"核心设定文件为空: {setting_path}")
 
-def load_overall_outline(project_root: Optional[Path] = None) -> Dict[str, Any]:
-    """
-    加载整体大纲（新架构版本）
-
-    Args:
-        project_root: 项目根目录
-
-    Returns:
-        Dict[str, Any]: 整体大纲字典
-    """
-    if project_root is None:
-        project_root = get_project_root()
-
-    paths = get_current_novel_paths(project_root)
-    if not paths:
-        return {}
-
-    outline_path = paths.get("source_dir", Path()) / "overall_outline.yaml"
-    return load_yaml_file(outline_path, default={})
+    return data
 
 
 def load_style_guide(project_root: Optional[Path] = None) -> Dict[str, Any]:
@@ -398,6 +392,27 @@ def load_style_guide(project_root: Optional[Path] = None) -> Dict[str, Any]:
 
     style_path = paths.get("prompts_dir", Path()) / "style_guide.yaml"
     return load_yaml_file(style_path, default={})
+
+
+def load_chapter_plan(project_root: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    加载章节规划文件（新架构版本）
+
+    Args:
+        project_root: 项目根目录
+
+    Returns:
+        Dict[str, Any]: 章节规划字典
+    """
+    if project_root is None:
+        project_root = get_project_root()
+
+    paths = get_current_novel_paths(project_root)
+    if not paths:
+        return {}
+
+    plan_path = paths.get("source_dir", Path()) / "chapter_plan.yaml"
+    return load_yaml_file(plan_path, default={})
 
 
 def save_yaml_file(file_path: Path, data: Dict[str, Any]) -> None:

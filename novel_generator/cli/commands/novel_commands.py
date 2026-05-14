@@ -272,7 +272,7 @@ def novel_create(args: argparse.Namespace) -> int:
             print_info(f"  API配置: {selected_provider}")
         print_info("\n下一步:")
         print_info("  1. 编辑 source/core_setting.yaml 填写核心设定")
-        print_info("  2. 编辑 source/overall_outline.yaml 填写整体大纲")
+        print_info("  2. 编辑 source/chapter_plan.yaml 填写章节规划（5章区间）")
         print_info("  3. 编辑 prompts/style_guide.yaml 调整风格指导")
         print_info("  4. 运行 'soundnovel cli outline' 生成章节大纲")
 

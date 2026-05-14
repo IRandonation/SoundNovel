@@ -57,7 +57,7 @@ class NovelProject:
             # 初始化 generation.json (生成参数)
             generation_config = {
                 "context_chapters": 10,
-                "default_word_count": 1500,
+                "default_word_count": 3000,  # 提高默认字数目标
                 "outline_window": 30,
                 "draft_window": 10,
                 # 滑动窗口多轮配置（完全替换原有batch模式）
@@ -139,42 +139,37 @@ class NovelProject:
         with open(core_setting_path, "w", encoding="utf-8") as f:
             f.write(core_setting_template)
 
-        # 整体大纲模板
-        overall_outline_template = """# 整体大纲模板
-# 请根据您的小说创作需求填写以下内容
+        # 章节规划模板
+        chapter_plan_template = """# 章节规划模板
+# 以5章为间隔的详细规划，替代原幕结构
+# 每个区间包含核心内容、情绪基调、关键约束
 
-第一幕:
-  # 【请填写】章节范围+核心剧情
-  # 例如：第1-15章，主角踏入江湖，初露锋芒
+总章节数: 100  # 【请填写】小说总章节数
 
-第二幕:
-  # 【请填写】章节范围+核心剧情
-  # 例如：第16-40章，揭秘阴谋，势力角逐
+故事概述: "【请填写】简短全局描述，注入到每个批次的prompt"
 
-第三幕:
-  # 【请填写】章节范围+核心剧情
-  # 例如：第41-60章，最终对决，尘埃落定
+剧情规划:
+  # ===== 第一阶段 =====
 
-关键转折点:
-  # 【请填写】重要转折点及其章节
-  # - 第X章: [具体事件，如"主角发现父亲秘密"]
-  # - 第Y章: [具体事件，如"重要角色牺牲"]
-  # - 第Z章: [具体事件，如"真相大白"]
+  第1-5章:
+    核心内容: "事件A→事件B→事件C→事件D→事件E"  # 箭头链接关键事件
+    情绪基调: "情绪A→情绪B→情绪C"
+    关键约束: ["约束1", "约束2"]  # 必须遵守的规则
 
-# 章节规划（可选）
-# 可以添加更详细的章节规划
-# 第一章: [开篇介绍，主角背景]
-# 第二章: [事件发生，主角行动]
-# ...
+  第6-10章:
+    核心内容: "事件A→事件B→事件C→事件D→事件E"
+    情绪基调: "情绪A→情绪B→情绪C"
+    关键约束: ["约束1", "约束2"]
 
-# 故事主题（可选）
-# 主题：
-# 核心思想：
+  # ===== 继续填写更多5章区间 =====
+  # 第11-15章:
+  # 第16-20章:
+  # ...
 """
 
-        overall_outline_path = self.source_dir / "overall_outline.yaml"
-        with open(overall_outline_path, "w", encoding="utf-8") as f:
-            f.write(overall_outline_template)
+        chapter_plan_path = self.source_dir / "chapter_plan.yaml"
+        with open(chapter_plan_path, "w", encoding="utf-8") as f:
+            f.write(chapter_plan_template)
 
     def _init_prompts(self):
         """初始化 prompts 目录，使用硬编码通用模板"""
@@ -222,16 +217,41 @@ generator:
   template: |
     你是一个专业的网络小说作家，擅长根据大纲创作引人入胜的章节内容。
 
-    核心写作原则：
-    1. 展示而非讲述：用具体动作、神态、对话展现人物情绪，避免"他感到..."等直接陈述
-    2. 细节落地：每段描写都要有具体的感官细节，避免空洞的概括
-    3. 剧情推进：每章必须有新的情节发展，不能重复前文已发生的内容
-    4. 节奏把控：张弛有度，动作场景简洁有力，情感场景细腻动人
+    【网文写作核心原则】
+    1. 展示而非讲述：用具体动作、神态、对话展现人物情绪，禁止直接写"他感到..."
+    2. 感官落地：每200字至少有一个感官细节（视觉、听觉、触觉、嗅觉）
+    3. 心理渲染：用行为暗示情绪，如"攥紧拳头→指甲嵌入掌心"代替"他很愤怒"
+    4. 结尾钩子：悬念式结尾，禁止总结升华（如"这一刻他明白了..."）
+
+    【节奏控制】
+    - 铺垫阶段(30-40%)：建立场景、渲染起始情绪
+    - 发展阶段(40-50%)：推进事件、积累情绪
+    - 收束阶段(20-30%)：结尾钩子、悬念暗示
+
+    【禁止流水账】
+    - 禁止连续三个段落用"然后"推进剧情
+    - 用因果链代替时间线（因为A，所以B，导致C）
+    - 每个场景必须有情绪变化节点
 
     禁忌词汇（绝对不可使用）：
     - "复杂的思绪"、"难以言喻"、"命运的齿轮"
     - "一种莫名的"、"心中五味杂陈"
     - "仿佛"、"似乎"、"这一刻"（减少使用）
+
+  additional_requirements:
+    sensory_details:
+      - "每个场景至少包含2种感官细节"
+      - "视觉：光线变化、颜色对比、动作冲击"
+      - "听觉：声音的远近、强弱、节奏"
+      - "触觉：温度、质感、疼痛的生理感受"
+      - "嗅觉：气味与情绪的关联"
+    emotional_rendering:
+      - "禁止直接写情绪标签"
+      - "用动作暗示：攥紧拳头、指甲嵌入掌心、呼吸急促"
+      - "用生理反应暗示：膝盖发软、视野发黑、心跳如擂鼓"
+    ending_hook:
+      - "悬念式结尾：未完成的行动、突发变故、悬念暗示"
+      - "禁止总结升华：'这一刻他明白了...'、'命运的齿轮开始转动...'"
 '''
 
     def _get_style_guide_template(self) -> str:
@@ -277,13 +297,81 @@ generator:
         return '''# 章节生成提示词配置
 # 用于指导AI生成章节内容
 
+name: "chapter_generation"
+
+# 批量生成写作技巧配置
+batch_writing_rules:
+  sensory_details:
+    description: "感官描写要求"
+    rules:
+      - "每个场景至少包含2种感官细节（视觉+听觉/触觉/嗅觉）"
+      - "视觉：光线变化、颜色对比、动作冲击"
+      - "听觉：声音的远近、强弱、节奏"
+      - "触觉：温度、质感、疼痛的生理感受"
+  emotional_rendering:
+    description: "心理渲染要求"
+    rules:
+      - "用行为暗示情绪，禁止直接写情绪标签"
+      - "示例：不说'他感到绝望'，而写'他死死攥住龙鳞，边缘陷进肉里'"
+  plot_progression:
+    description: "剧情推进要求"
+    rules:
+      - "禁止流水账：用因果链代替时间线（因为A，所以B，导致C）"
+      - "每个场景必须有情绪变化节点"
+  ending_hook:
+    description: "结尾钩子设计"
+    rules:
+      - "悬念式结尾，禁止总结升华"
+      - "结尾类型：未完成的行动、突发变故、悬念暗示"
+
+writing_rules:
+  - id: "no_repeat"
+    priority: 1
+    text: "禁止重复前文"
+  - id: "show_not_tell"
+    priority: 2
+    text: "展示而非讲述：用具体动作代替情绪标签"
+  - id: "ending_landing"
+    priority: 3
+    text: "结尾落地：结尾落在感官细节上，禁止总结升华"
+  - id: "word_count"
+    priority: 4
+    text: "字数要求：目标字数±100字"
+
+banned_words:
+  emotion:
+    - "五味杂陈"
+    - "百感交集"
+    - "莫名的"
+    - "一种复杂的"
+    - "难以言喻"
+    - "心中涌起"
+    - "心下了然"
+    - "若有所思"
+    - "不由得"
+    - "情不自禁"
+  action:
+    - "微微点头"
+    - "轻叹一声"
+    - "微微一笑"
+    - "眼神闪了闪"
+    - "嘴角上扬"
+    - "眉头微皱"
+    - "眼眶微红"
+  structure:
+    - "就在这时"
+    - "突然之间"
+    - "与此同时"
+    - "命运的齿轮"
+    - "这一刻"
+
 template: |
   【任务】撰写小说第{chapter_num}章正文
 
   1. 核心设定：
   {core_setting}
 
-  2. 前文剧情全文（已发生，不可重复）：
+  2. 前文剧情摘要（已发生，不可重复）：
   {previous_context}
 
   ⚠️ 以上是第{chapter_num}章之前已经发生的剧情，绝对不能重复！
@@ -303,16 +391,24 @@ template: |
   【写作法则】
   1. 禁止重复前文：前文剧情已经发生，本章必须是全新剧情推进
   2. 展示而非讲述：用具体动作代替情绪标签
-  3. 结尾落地：结尾必须落在具体感官细节上，禁止总结、升华
+  3. 结尾落地：结尾落在感官细节上，禁止总结升华
   4. 字数要求：{word_count}字左右（误差不超过±100字）
 
-  请直接输出章节正文内容，不要添加任何解释或标记。
+  【禁忌词】
+  禁止使用：五味杂陈、难以言喻、命运的齿轮、莫名的、不由得、微微一笑
 
-writing_rules:
-  - "展示而非讲述"
-  - "细节落地"
-  - "剧情推进"
-  - "节奏把控"
+  请直接输出章节正文内容。
+
+variables:
+  - chapter_num
+  - core_setting
+  - previous_context
+  - chapter_outline
+  - character_context
+  - foreshadowing_context
+  - emotional_context
+  - style_guide
+  - word_count
 '''
 
     def _get_outline_generation_template(self) -> str:
@@ -320,29 +416,21 @@ writing_rules:
         return '''# 大纲生成提示词配置
 # 用于指导AI生成章节大纲
 
-act_plan_prompt: |
-  【任务】基于以下设定，生成小说幕级规划
+chapter_plan_prompt: |
+  【任务】基于以下设定，生成章节骨架
 
   世界观与核心设定：
   {core_setting}
 
-  整体故事结构：
-  {overall_outline}
+  故事概述：
+  {story_overview}
 
-  请生成{total_chapters}章小说的幕级规划，包括：
-  - 每一幕的章节范围
-  - 每一幕的核心冲突和目标
-  - 幕与幕之间的转折关系
-
-chapter_skeleton_prompt: |
-  【任务】基于幕级规划，生成章节骨架
-
-  幕级规划：
-  {act_plan}
+  5章区间规划：
+  {chapter_plan}
 
   需要生成的章节范围：第{start_chapter}章 到 第{end_chapter}章
 
-  每章骨架应包含：
+  请为每章生成完整骨架，包含：
   - 章节定位
   - 核心事件
   - 与前章的因果关系
@@ -484,7 +572,7 @@ template: |
             "logs_dir": self.logs_dir,
             "prompts_dir": self.prompts_dir,
             "core_setting": self.source_dir / "core_setting.yaml",
-            "overall_outline": self.source_dir / "overall_outline.yaml",
+            "chapter_plan": self.source_dir / "chapter_plan.yaml",
             "system_prompts": self.prompts_dir / "system_prompts.yaml",
             "style_guide": self.prompts_dir / "style_guide.yaml",
             "generation_prompts": self.prompts_dir / "generation_prompts.yaml",
