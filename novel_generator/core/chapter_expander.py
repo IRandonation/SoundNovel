@@ -137,6 +137,23 @@ class ChapterExpander:
             "total_chapters": 0,
         }
 
+        # 提示词标签缓存
+        self._prompt_labels_cache: Dict[str, Any] = {}
+
+    def _get_prompt_labels(self) -> Dict[str, Any]:
+        """延迟加载提示词标签配置（从 chapter_expansion.yaml）"""
+        if not self._prompt_labels_cache:
+            from novel_generator.utils.prompt_manager import PromptManager
+            pm = PromptManager(self.project_root)
+            self._prompt_labels_cache = {
+                "system": pm.chapter_expansion_prompts.get("system", {}),
+                "chapter_plan_context": pm.get_chapter_plan_context_labels(),
+                "batch_prompt": pm.get_batch_prompt_labels(),
+                "compact_skeleton": pm.get_compact_skeleton_labels(),
+                "chapter_prompt": pm.get_chapter_prompt_labels(),
+            }
+        return self._prompt_labels_cache
+
     def expand_chapter(
         self,
         chapter_num: int,
@@ -385,51 +402,49 @@ class ChapterExpander:
 
     def _build_system_content(self) -> str:
         """构建系统提示词内容（从配置文件加载）"""
-        # 从 PromptManager 加载 generator 角色的 system prompt
         from novel_generator.utils.prompt_manager import PromptManager
 
         prompt_manager = PromptManager(self.project_root)
         template = prompt_manager.get_system_prompt("generator")
 
+        labels = self._get_prompt_labels()
+        sys_labels = labels.get("system", {})
+
         if template:
             base = template
         else:
-            # 回退到简单默认
-            base = "你是一位专业的小说作家，擅长根据大纲骨架扩写高质量的网文章节。"
+            base = sys_labels.get("fallback_role", "")
 
         # 注入设定禁忌
         if self.core_setting:
             禁忌 = self.core_setting.get("设定禁忌", [])
             if 禁忌:
                 taboo_lines = []
-                # 设定禁忌是列表格式，包含分类标记和具体禁忌条目
                 if isinstance(禁忌, list):
-                    # 处理列表格式的禁忌
                     current_section = None
                     for item in 禁忌:
                         if isinstance(item, str):
-                            # 检查是否是分类标记（如【龙魂禁忌】）
                             if item.startswith("【") and item.endswith("】"):
                                 current_section = item
                                 taboo_lines.append(f"\n{item}")
                             elif current_section and item.startswith("-"):
-                                # 具体禁忌条目，去掉前导 -
                                 taboo_lines.append(f"• {item.lstrip('- ').strip()}")
                             elif item.strip():
-                                # 其他内容直接添加
                                 taboo_lines.append(f"• {item}")
                 elif isinstance(禁忌, dict):
-                    # 兼容字典格式（如果将来格式变化）
                     for section, items in 禁忌.items():
                         if isinstance(items, list) and items:
                             taboo_lines.append(f"\n【{section}】")
                             taboo_lines.extend([f"• {t}" for t in items[:3]])
                 elif isinstance(禁忌, str):
-                    # 兼容字符串格式
                     taboo_lines.append(f"\n• {禁忌}")
 
                 if taboo_lines:
-                    base += "\n\n⚠️ 以下设定禁忌必须严格遵守，不得违反：\n" + "\n".join(taboo_lines)
+                    taboo_header = sys_labels.get("taboo_header", "")
+                    if taboo_header:
+                        base += f"\n\n{taboo_header}\n" + "\n".join(taboo_lines)
+                    else:
+                        base += "\n\n" + "\n".join(taboo_lines)
 
         return base
 
@@ -463,6 +478,11 @@ class ChapterExpander:
         if not chapter_plan:
             return ""
 
+        labels = self._get_prompt_labels()
+        cp_labels = labels.get("chapter_plan_context", {})
+        section_format = cp_labels.get("section_header_format", "【{section_key}】")
+        ft = cp_labels.get("field_templates", {})
+
         parts = []
         剧情规划 = chapter_plan.get("剧情规划", {})
 
@@ -478,7 +498,6 @@ class ChapterExpander:
                 break
 
         if not current_section_key:
-            # 如果没找到当前区间，返回空
             return ""
 
         # 收集要注入的区间：当前区间、前一区间、后一区间
@@ -487,12 +506,9 @@ class ChapterExpander:
 
         try:
             current_idx = section_keys.index(current_section_key)
-            # 前一区间
             if current_idx > 0:
                 sections_to_inject.append(section_keys[current_idx - 1])
-            # 当前区间
             sections_to_inject.append(current_section_key)
-            # 后一区间
             if current_idx < len(section_keys) - 1:
                 sections_to_inject.append(section_keys[current_idx + 1])
         except ValueError:
@@ -504,21 +520,25 @@ class ChapterExpander:
             if not section_data:
                 continue
 
-            parts.append(f"\n【{section_key}】")
+            parts.append(f"\n{section_format.format(section_key=section_key)}")
 
             核心内容 = section_data.get("核心内容", "")
             if 核心内容:
-                parts.append(f"核心内容: {核心内容}")
+                tmpl = ft.get("核心内容", "核心内容: {value}")
+                parts.append(tmpl.format(value=核心内容))
 
             情绪基调 = section_data.get("情绪基调", "")
             if 情绪基调:
-                parts.append(f"情绪基调: {情绪基调}")
+                tmpl = ft.get("情绪基调", "情绪基调: {value}")
+                parts.append(tmpl.format(value=情绪基调))
 
             关键约束 = section_data.get("关键约束", [])
             if 关键约束:
-                parts.append(f"关键约束:")
+                header_tmpl = ft.get("关键约束_header", "关键约束:")
+                parts.append(header_tmpl)
+                item_tmpl = ft.get("关键约束_item", "  - {value}")
                 for constraint in 关键约束:
-                    parts.append(f"  - {constraint}")
+                    parts.append(item_tmpl.format(value=constraint))
 
         return "\n".join(parts) if parts else ""
 
@@ -547,8 +567,16 @@ class ChapterExpander:
         outline: Dict[str, Any],
     ) -> str:
         """构建批量生成的用户提示"""
+        labels = self._get_prompt_labels()
+        bp = labels.get("batch_prompt", {})
+        sl = bp.get("section_labels", {})
+        divider = bp.get("divider", "=" * 50)
+
         lines: List[str] = []
-        lines.append(f"请根据以上上下文，依次生成第{chapters[0]}章到第{chapters[-1]}章的完整正文。")
+
+        # 任务行
+        task_tmpl = bp.get("task_template", "请根据以上上下文，依次生成第{start_ch}章到第{end_ch}章的完整正文。")
+        lines.append(task_tmpl.format(start_ch=chapters[0], end_ch=chapters[-1]))
         lines.append("")
 
         # 从配置文件加载写作技巧
@@ -557,29 +585,25 @@ class ChapterExpander:
         batch_rules = prompt_manager.generation_prompts.get("batch_writing_rules", {})
 
         if batch_rules:
-            lines.append("【写作技巧要求】")
-            # 感官描写
+            lines.append(sl.get("writing_tips", "【写作技巧要求】"))
             sensory = batch_rules.get("sensory_details", {})
             if sensory:
                 rules = sensory.get("rules", [])
                 lines.append(f"1. {sensory.get('description', '感官描写')}:")
                 for r in rules[:3]:
                     lines.append(f"   - {r}")
-            # 心理渲染
             emotional = batch_rules.get("emotional_rendering", {})
             if emotional:
                 rules = emotional.get("rules", [])
                 lines.append(f"2. {emotional.get('description', '心理渲染')}:")
                 for r in rules[:2]:
                     lines.append(f"   - {r}")
-            # 剧情推进
             plot = batch_rules.get("plot_progression", {})
             if plot:
                 rules = plot.get("rules", [])
                 lines.append(f"3. {plot.get('description', '剧情推进')}:")
                 for r in rules[:2]:
                     lines.append(f"   - {r}")
-            # 结尾钩子
             ending = batch_rules.get("ending_hook", {})
             if ending:
                 rules = ending.get("rules", [])
@@ -588,136 +612,156 @@ class ChapterExpander:
                     lines.append(f"   - {r}")
             lines.append("")
         else:
-            # 回退到默认规则
-            lines.append("【写作技巧要求】")
-            lines.append("1. 感官描写：每个场景至少包含2种感官细节")
-            lines.append("2. 心理渲染：用行为暗示情绪，禁止情绪标签")
-            lines.append("3. 禁止流水账：用因果链代替时间线")
-            lines.append("4. 结尾钩子：悬念式结尾，禁止总结升华")
+            lines.append(sl.get("writing_tips", "【写作技巧要求】"))
+            for rule in bp.get("fallback_writing_rules", []):
+                lines.append(rule)
             lines.append("")
 
-        # 加载进度控制规则（从配置文件，避免硬编码）
+        # 加载进度控制规则
         progress_rules = prompt_manager.generation_prompts.get("progress_control", {})
         if progress_rules:
             rules = progress_rules.get("rules", [])
             if rules:
-                lines.append("【进度控制（必须遵守）】")
+                lines.append(sl.get("progress_control", "【进度控制（必须遵守）】"))
                 for rule in rules:
                     lines.append(f"  - {rule}")
                 lines.append("")
         else:
-            # 回退到默认规则
-            lines.append("【进度控制】")
-            lines.append("  - 本章内容必须严格限定在核心事件范围内")
-            lines.append("  - 禁止提前完成后续章节的核心事件")
-            lines.append("  - 时间跨度必须遵守大纲设定")
-            lines.append("  - 结尾状态必须精确匹配结尾卡点")
+            lines.append(sl.get("progress_control_fallback", "【进度控制】"))
+            for rule in bp.get("fallback_progress_control", []):
+                lines.append(rule)
             lines.append("")
 
-        lines.append("生成要求：")
-        lines.append("1. 每章内容必须完整，包含场景描写、对话、动作等")
-        lines.append("2. 章节之间用明确的分隔标记分割")
-        lines.append("3. 确保人物设定、伏笔、文风在各章之间保持一致")
-        lines.append("4. 严格按各章骨架的字数目标执行，不足时补充感官细节")
-        lines.append("")
-        lines.append(f"章节分隔格式：每章结束后必须包含标记 '{self.CHAPTER_SEPARATOR.format(ch='章节号')}'")
-        lines.append("例如：第13章结束后写 '===第13章结束==='")
-        lines.append("")
-        lines.append("=" * 50)
-        lines.append("【各章骨架】")
-        lines.append("=" * 50)
+        # 生成要求
+        lines.append(sl.get("generation_header", "生成要求："))
+        for req in bp.get("generation_requirements", []):
+            lines.append(req)
         lines.append("")
 
+        # 章节分隔格式说明
+        sep_instr = bp.get("separator_instruction", "")
+        if sep_instr:
+            lines.append(sep_instr.format(separator_template=self.CHAPTER_SEPARATOR.format(ch='章节号')))
+        else:
+            lines.append(f"章节分隔格式：每章结束后必须包含标记 '{self.CHAPTER_SEPARATOR.format(ch='章节号')}'")
+        sep_example = bp.get("separator_example", "")
+        if sep_example:
+            lines.append(sep_example)
+        else:
+            lines.append("例如：第13章结束后写 '===第13章结束==='")
+        lines.append("")
+
+        # 各章骨架
+        lines.append(divider)
+        lines.append(sl.get("skeleton_header", "【各章骨架】"))
+        lines.append(divider)
+        lines.append("")
+
+        skeleton_sep = sl.get("batch_skeleton_separator", ">>> 第{ch_num}章 <<<")
         for ch_num in chapters:
             ch_key = f"第{ch_num}章"
             ch_outline = outline.get(ch_key, {})
             skeleton = self._build_compact_skeleton(ch_num, ch_outline)
 
-            lines.append(f"\n>>> 第{ch_num}章 <<<")
+            lines.append(f"\n{skeleton_sep.format(ch_num=ch_num)}")
             lines.append(skeleton)
             lines.append("")
 
         lines.append("")
-        lines.append("=" * 50)
-        lines.append("请开始生成各章正文（务必遵守每章结尾卡点）：")
-        lines.append("=" * 50)
+        lines.append(divider)
+        lines.append(sl.get("generation_call", "请开始生成各章正文（务必遵守每章结尾卡点）："))
+        lines.append(divider)
 
         return "\n".join(lines)
 
     def _build_compact_skeleton(self, ch_num: int, ch_outline: Dict[str, Any]) -> str:
-        """构建紧凑的章节骨架"""
+        """构建紧凑的章节骨架（标签从 chapter_expansion.yaml 加载）"""
+        labels = self._get_prompt_labels()
+        cs = labels.get("compact_skeleton", {})
+        fl = cs.get("field_labels", {})
+        sh = cs.get("section_headers", {})
+        wc = cs.get("word_count", {})
+
         parts: List[str] = []
 
+        # 标题
         title = ch_outline.get("标题", f"第{ch_num}章")
-        parts.append(f"标题: {title}")
+        parts.append(fl.get("title", "标题: {value}").format(value=title))
 
+        # 章节定位
         position = ch_outline.get("章节定位", "")
         if position:
-            parts.append(f"定位: {position}")
+            parts.append(fl.get("position", "定位: {value}").format(value=position))
 
-        # 与前章因果 - 批量生成时必须明确传递
+        # 与前章因果
         cause_chain = ch_outline.get("与前章因果", "")
         if cause_chain:
-            parts.append(f"\n【与前章因果（本章开头必须精确衔接）】")
+            parts.append(f"\n{sh.get('cause_chain', '【与前章因果（本章开头必须精确衔接）】')}")
             parts.append(cause_chain)
 
+        # 核心事件
         core_event = ch_outline.get("核心事件", "")
         if core_event:
-            parts.append(f"\n【核心事件（本章唯一内容范围，禁止超出）】")
+            parts.append(f"\n{sh.get('core_event', '【核心事件（本章唯一内容范围，禁止超出）】')}")
             parts.append(core_event)
-            parts.append("⚠ 本章内容不得超出此范围，不得提前完成后续章节事件")
+            parts.append(sh.get("core_event_warning", "⚠ 本章内容不得超出此范围，不得提前完成后续章节事件"))
 
-        # 新增：人物行动（完整传递）
+        # 人物行动
         character_actions = ch_outline.get("人物行动", {})
         if character_actions:
-            parts.append(f"\n【人物行动（必须遵守）】")
+            parts.append(f"\n{sh.get('character_actions', '【人物行动（必须遵守）】')}")
             if isinstance(character_actions, dict):
+                item_tmpl = sh.get("character_action_item", "  {role}: {action}")
                 for role, action in character_actions.items():
-                    parts.append(f"  {role}: {action}")
+                    parts.append(item_tmpl.format(role=role, action=action))
             else:
-                parts.append(f"  {character_actions}")
+                parts.append(sh.get("character_action_bare", "  {value}").format(value=character_actions))
 
-        # 场景概览（完整传递，取消截断）
+        # 场景概览
         scenes = ch_outline.get("场景概览", [])
         if scenes:
-            parts.append(f"\n【场景概览 ({len(scenes)}个场景)】")
+            header = sh.get("scenes", "【场景概览 ({count}个场景)】").format(count=len(scenes))
+            parts.append(f"\n{header}")
+            item_tmpl = sh.get("scene_item", "  {index}. {scene}")
             for i, s in enumerate(scenes, 1):
-                parts.append(f"  {i}. {s}")
+                parts.append(item_tmpl.format(index=i, scene=s))
 
+        # 情绪曲线
         emotion = ch_outline.get("情绪曲线", "")
         if emotion:
-            parts.append(f"\n情绪曲线: {emotion}")
+            parts.append(f"\n{sh.get('emotion', '情绪曲线: {value}').format(value=emotion)}")
 
-        # 新增：伏笔处理（完整传递）
+        # 伏笔处理
         foreshadowing = ch_outline.get("伏笔处理", {})
         if foreshadowing:
-            parts.append(f"\n【伏笔处理】")
+            parts.append(f"\n{sh.get('foreshadowing', '【伏笔处理】')}")
             if isinstance(foreshadowing, dict):
                 buried = foreshadowing.get("埋设", [])
                 recovered = foreshadowing.get("回收", [])
                 if buried:
-                    parts.append(f"  埋设: {'; '.join(str(x) for x in buried)}")
+                    parts.append(sh.get("foreshadowing_bury", "  埋设: {value}").format(
+                        value='; '.join(str(x) for x in buried)))
                 if recovered:
-                    parts.append(f"  回收: {'; '.join(str(x) for x in recovered)}")
+                    parts.append(sh.get("foreshadowing_recover", "  回收: {value}").format(
+                        value='; '.join(str(x) for x in recovered)))
             else:
-                parts.append(f"  {foreshadowing}")
+                parts.append(sh.get("foreshadowing_bare", "  {value}").format(value=foreshadowing))
 
+        # 结尾卡点
         ending = ch_outline.get("结尾卡点", "")
         if ending:
-            # 强制标注结尾卡点要求，添加检查要点
-            parts.append(f"\n【结尾卡点（必须精确匹配，不得超前或偏离）】")
+            parts.append(f"\n{sh.get('ending', '【结尾卡点（必须精确匹配，不得超前或偏离）】')}")
             parts.append(ending)
-            parts.append("⚠ 检查要点：")
-            parts.append("  1. 时间跨度是否符合大纲设定")
-            parts.append("  2. 人物状态是否符合大纲（如龙魂沉寂/苏醒）")
-            parts.append("  3. 境界进度是否符合大纲（如未突破/已突破）")
+            parts.append(sh.get("ending_check_header", "⚠ 检查要点："))
+            for check in sh.get("ending_checks", []):
+                parts.append(check)
 
+        # 字数目标
         word_count = ch_outline.get("字数目标", self.settings.get_default_word_count())
-        parts.append(f"\n字数目标: {word_count}字（最低{word_count}字，误差±50字）")
-        parts.append(f"字数不足补救：")
-        parts.append(f"  - 增加场景感官细节描写（视觉、听觉、触觉、嗅觉）")
-        parts.append(f"  - 增加人物心理渲染（用动作/生理反应表现情绪）")
-        parts.append(f"  - 增加环境氛围刻画")
+        parts.append(f"\n{wc.get('target', '字数目标: {word_count}字（最低{word_count}字，误差±50字）').format(word_count=word_count)}")
+        parts.append(wc.get("remedy_header", "字数不足补救："))
+        for remedy in wc.get("remedies", []):
+            parts.append(remedy)
 
         return "\n".join(parts)
 
@@ -786,7 +830,15 @@ class ChapterExpander:
         outline_context: str,
         draft_context: str,
     ) -> str:
-        """构建章节扩写prompt：大纲上下文 + 正文上下文 + 当前章骨架"""
+        """构建章节扩写prompt：大纲上下文 + 正文上下文 + 当前章骨架（标签从 YAML 加载）"""
+        labels = self._get_prompt_labels()
+        cp = labels.get("chapter_prompt", {})
+        sl = cp.get("section_labels", {})
+        fl = cp.get("field_labels", {})
+        sh = cp.get("section_headers", {})
+        ff = cp.get("field_formats", {})
+        tb = cp.get("text_blocks", {})
+
         title = chapter_outline.get("标题", f"第{chapter_num}章")
         core_event = chapter_outline.get("核心事件", "")
         position = chapter_outline.get("章节定位", "")
@@ -800,63 +852,63 @@ class ChapterExpander:
 
         parts = []
 
-        # 注意：core_setting 已在 system 消息中注入，此处不再重复
-
         if outline_context:
-            parts.append(f"【前文大纲上下文（保证宏观连续性）】\n{outline_context}")
+            parts.append(f"{sl.get('outline_context', '【前文大纲上下文（保证宏观连续性）】')}\n{outline_context}")
 
         if draft_context:
-            parts.append(f"【前文正文全文（保持文风、语气、细节连贯）】\n{draft_context}")
+            parts.append(f"{sl.get('draft_context', '【前文正文全文（保持文风、语气、细节连贯）】')}\n{draft_context}")
 
-        parts.append(f"【当前章节骨架 - 第{chapter_num}章】")
-        parts.append(f"标题: {title}")
+        parts.append(sl.get("skeleton_header", "【当前章节骨架 - 第{chapter_num}章】").format(chapter_num=chapter_num))
+        parts.append(fl.get("title", "标题: {value}").format(value=title))
         if position:
-            parts.append(f"章节定位: {position}")
+            parts.append(fl.get("position", "章节定位: {value}").format(value=position))
         if cause_chain:
-            # 强制标注与前章因果，强调衔接要求
-            parts.append(f"\n【与前章因果（本章开头必须精确衔接）】")
+            parts.append(f"\n{sh.get('cause_chain', '【与前章因果（本章开头必须精确衔接）】')}")
             parts.append(cause_chain)
         if core_event:
-            parts.append(f"核心事件: {core_event}")
+            parts.append(ff.get("core_event", "核心事件: {value}").format(value=core_event))
         if emotion_target:
-            parts.append(f"情绪曲线: {emotion_target}")
+            parts.append(ff.get("emotion", "情绪曲线: {value}").format(value=emotion_target))
         if character_actions:
             if isinstance(character_actions, dict):
+                item_tmpl = ff.get("character_actions_item", "  {role}: {action}")
                 for role, action in character_actions.items():
-                    parts.append(f"  {role}: {action}")
+                    parts.append(item_tmpl.format(role=role, action=action))
             else:
-                parts.append(f"角色行动: {character_actions}")
+                parts.append(ff.get("character_actions_bare", "角色行动: {value}").format(value=character_actions))
         if foreshadowing:
             if isinstance(foreshadowing, dict):
                 buried = foreshadowing.get("埋设", [])
                 recovered = foreshadowing.get("回收", [])
                 if buried:
-                    parts.append(f"伏笔埋设: {', '.join(str(x) for x in buried)}")
+                    parts.append(ff.get("foreshadowing_bury", "伏笔埋设: {value}").format(
+                        value=', '.join(str(x) for x in buried)))
                 if recovered:
-                    parts.append(f"伏笔回收: {', '.join(str(x) for x in recovered)}")
+                    parts.append(ff.get("foreshadowing_recover", "伏笔回收: {value}").format(
+                        value=', '.join(str(x) for x in recovered)))
             else:
-                parts.append(f"伏笔处理: {foreshadowing}")
+                parts.append(ff.get("foreshadowing_bare", "伏笔处理: {value}").format(value=foreshadowing))
 
         if isinstance(scene_overview, list) and scene_overview:
-            parts.append(f"\n场景概览 ({len(scene_overview)}个场景):")
+            header = ff.get("scenes_header", "场景概览 ({count}个场景):").format(count=len(scene_overview))
+            parts.append(f"\n{header}")
+            item_tmpl = ff.get("scenes_item", "  - {scene}")
             for s in scene_overview:
-                parts.append(f"  - {s}")
+                parts.append(item_tmpl.format(scene=s))
 
         if ending_hook:
-            # 强制标注结尾卡点要求，添加详细说明
-            parts.append(f"\n【结尾卡点（必须严格遵守）】")
+            parts.append(f"\n{sh.get('ending', '【结尾卡点（必须严格遵守）】')}")
             parts.append(ending_hook)
-            parts.append("注意：结尾卡点是剧情进度控制的关键节点，必须精确匹配上述描述的状态。")
-            parts.append("不得超前（写入后续章节内容）或偏离（改变结尾状态）。")
+            parts.append(sh.get("ending_notice", "注意：结尾卡点是剧情进度控制的关键节点，必须精确匹配上述描述的状态。"))
+            parts.append(sh.get("ending_warning", "不得超前（写入后续章节内容）或偏离（改变结尾状态）。"))
 
-        parts.append(f"\n字数目标: {word_count}字")
-        parts.append("\n请根据以上骨架和上下文，生成完整的章节正文。")
-        parts.append("场景概览是粗粒度的剧情推进指引，场景间的具体过渡、对话细节、感官描写由你自然发挥。")
+        parts.append(f"\n{ff.get('word_count', '字数目标: {word_count}字').format(word_count=word_count)}")
+        parts.append(f"\n{tb.get('generation_instruction', '请根据以上骨架和上下文，生成完整的章节正文。')}")
+        parts.append(tb.get("scene_note", "场景概览是粗粒度的剧情推进指引，场景间的具体过渡、对话细节、感官描写由你自然发挥。"))
         parts.append("")
-        parts.append("【核心约束】")
-        parts.append("1. 与前章因果必须精确衔接：章节开头的状态、事件必须与前章结尾保持完全一致，确保故事连贯")
-        parts.append("2. 结尾卡点必须精确匹配：章节结尾的状态、场景、人物位置必须与结尾卡点描述一致")
-        parts.append("3. 文风一致、细节连贯、伏笔贯通、情绪到位")
+        parts.append(tb.get("core_constraints_header", "【核心约束】"))
+        for constraint in tb.get("core_constraints", []):
+            parts.append(constraint)
 
         return "\n\n".join(parts)
 

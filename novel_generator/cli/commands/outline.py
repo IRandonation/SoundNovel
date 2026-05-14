@@ -80,7 +80,7 @@ def run(args: argparse.Namespace) -> int:
         settings.validate()
 
         # Initialize outline generator
-        outline_gen = OutlineGenerator(api_config, output_dir=outline_dir)
+        outline_gen = OutlineGenerator(api_config, output_dir=outline_dir, project_root=str(config_manager.project_root))
 
         total_chapters = chapter_plan.get("总章节数", 793)
         print_info(f"检测到总章节数: {total_chapters}")

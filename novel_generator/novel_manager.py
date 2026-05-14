@@ -185,6 +185,11 @@ class NovelProject:
             "style_guide.yaml": self._get_style_guide_template(),
             "generation_prompts.yaml": self._get_generation_prompts_template(),
             "outline_generation.yaml": self._get_outline_generation_template(),
+            "chapter_expansion.yaml": self._get_chapter_expansion_template(),
+            "skeleton_generation.yaml": self._get_skeleton_generation_template(),
+            "review_prompts.yaml": self._get_review_prompts_template(),
+            "refine_prompts.yaml": self._get_refine_prompts_template(),
+            "state_card_prompt.yaml": self._get_state_card_template(),
             "satisfaction_prompts/face_slap.yaml": self._get_face_slap_template(),
             "satisfaction_prompts/power_up.yaml": self._get_power_up_template(),
         }
@@ -252,6 +257,51 @@ generator:
     ending_hook:
       - "悬念式结尾：未完成的行动、突发变故、悬念暗示"
       - "禁止总结升华：'这一刻他明白了...'、'命运的齿轮开始转动...'"
+
+# ──────────────────────────────────────────────
+reviewer:
+  name: "评审者"
+  description: "负责审查章节内容质量"
+  template: |
+    你是一个专业的文学编辑和评审专家，擅长分析小说内容的情节逻辑和连贯性。
+
+    评审时请关注：
+    1. 剧情一致性：是否重复前文、人物行为是否符合设定、情节逻辑是否连贯
+    2. 禁忌词检测：是否使用了禁止的AI感表达
+    3. AI感检测：文本是否带有明显的AI生成痕迹
+    4. 情节推进：每章是否有实质性的剧情进展
+    5. 文笔质量：语言是否生动、画面感是否强
+
+    请以JSON格式输出评审结果。
+
+refiner:
+  name: "润色者"
+  description: "负责润色和优化章节文字"
+  template: |
+    你是一个专业的文字润色专家，擅长优化句子结构和表达方式。
+
+    润色时请遵循以下原则：
+    1. 保持原意不变，仅优化表达
+    2. 消除AI感表达和禁忌词
+    3. 用具体动作代替情绪标签
+    4. 用感官细节代替抽象描述
+    5. 保持原文的字数规模
+
+    请直接输出润色后的内容，不要添加解释。
+
+outline_planner:
+  name: "大纲策划师"
+  description: "负责规划章节骨架"
+  template: |
+    你是一个专业的小说大纲策划师，擅长创作引人入胜的故事情节。
+
+    规划骨架时请关注：
+    1. 每章必须有独立的起承转合微结构
+    2. 核心事件要写明因果逻辑
+    3. 章节之间剧情自然递进
+    4. 情绪曲线有起有伏
+    5. 伏笔埋设与回收跨章协调
+    6. 结尾卡点制造悬念，驱动读者继续阅读
 '''
 
     def _get_style_guide_template(self) -> str:
@@ -509,6 +559,465 @@ template: |
   - 升级后要立即展现新能力
 '''
 
+    def _get_chapter_expansion_template(self) -> str:
+        """章节扩写提示词模板（chapter_expander.py 使用）"""
+        return '''# ============================================================
+# 章节扩写提示词配置 (ChapterExpander)
+# ============================================================
+#
+# 代码使用说明 (code_usage):
+#   system.fallback_role: _build_system_content() 回退文本
+#   system.taboo_header: _build_system_content() 禁忌段标题
+#   chapter_plan_context.*: _build_chapter_plan_context() 格式化标签
+#   batch_prompt.*: _build_batch_prompt() 格式化标签和回退规则
+#   compact_skeleton.*: _build_compact_skeleton() 格式化标签
+#   chapter_prompt.*: _build_chapter_prompt() 格式化标签
+#
+#   修改说明：
+#   - 修改字段值即可改变对应提示词输出
+#   - 不要删除字段名称
+#   - {变量} 占位符由代码填充
+
+name: "chapter_expansion"
+version: "1.0"
+
+system:
+  fallback_role: "你是一位专业的小说作家，擅长根据大纲骨架扩写高质量的网文章节。"
+  taboo_header: "⚠️ 以下设定禁忌必须严格遵守，不得违反："
+
+chapter_plan_context:
+  section_header_format: "【{section_key}】"
+  field_templates:
+    核心内容: "核心内容: {value}"
+    情绪基调: "情绪基调: {value}"
+    关键约束_header: "关键约束:"
+    关键约束_item: "  - {value}"
+
+  complete_preview: |
+    以下是 _build_chapter_plan_context() 输出的格式：
+    ┌──────────────────────────────────────────┐
+    │ 【第6-10章】                              │
+    │ 核心内容: (核心内容)                       │
+    │ 情绪基调: (情绪基调)                       │
+    │ 关键约束:                                  │
+    │   - (约束条目)                              │
+    └──────────────────────────────────────────┘
+
+batch_prompt:
+  task_template: "请根据以上上下文，依次生成第{start_ch}章到第{end_ch}章的完整正文。"
+
+  section_labels:
+    writing_tips: "【写作技巧要求】"
+    progress_control: "【进度控制（必须遵守）】"
+    progress_control_fallback: "【进度控制】"
+    generation_header: "生成要求："
+    skeleton_header: "【各章骨架】"
+    generation_call: "请开始生成各章正文（务必遵守每章结尾卡点）："
+    batch_skeleton_separator: ">>> 第{ch_num}章 <<<"
+
+  fallback_writing_rules:
+    - "1. 感官描写：每个场景至少包含2种感官细节"
+    - "2. 心理渲染：用行为暗示情绪，禁止情绪标签"
+    - "3. 禁止流水账：用因果链代替时间线"
+    - "4. 结尾钩子：悬念式结尾，禁止总结升华"
+
+  fallback_progress_control:
+    - "  - 本章内容必须严格限定在核心事件范围内"
+    - "  - 禁止提前完成后续章节的核心事件"
+    - "  - 时间跨度必须遵守大纲设定"
+    - "  - 结尾状态必须精确匹配结尾卡点"
+
+  generation_requirements:
+    - "1. 每章内容必须完整，包含场景描写、对话、动作等"
+    - "2. 章节之间用明确的分隔标记分割"
+    - "3. 确保人物设定、伏笔、文风在各章之间保持一致"
+    - "4. 严格按各章骨架的字数目标执行，不足时补充感官细节"
+
+  separator_instruction: "章节分隔格式：每章结束后必须包含标记 '{separator_template}'"
+  separator_example: "例如：第13章结束后写 '===第13章结束==='"
+
+  divider: "=================================================="
+
+  complete_preview: |
+    以下是 _build_batch_prompt() 输出的完整格式：
+    (参见完整模板注释)
+
+compact_skeleton:
+  field_labels:
+    title: "标题: {value}"
+    position: "定位: {value}"
+
+  section_headers:
+    cause_chain: "【与前章因果（本章开头必须精确衔接）】"
+    core_event: "【核心事件（本章唯一内容范围，禁止超出）】"
+    core_event_warning: "⚠ 本章内容不得超出此范围，不得提前完成后续章节事件"
+    character_actions: "【人物行动（必须遵守）】"
+    character_action_item: "  {role}: {action}"
+    character_action_bare: "  {value}"
+    scenes: "【场景概览 ({count}个场景)】"
+    scene_item: "  {index}. {scene}"
+    emotion: "情绪曲线: {value}"
+    foreshadowing: "【伏笔处理】"
+    foreshadowing_bury: "  埋设: {value}"
+    foreshadowing_recover: "  回收: {value}"
+    foreshadowing_bare: "  {value}"
+    ending: "【结尾卡点（必须精确匹配，不得超前或偏离）】"
+    ending_check_header: "⚠ 检查要点："
+    ending_checks:
+      - "  1. 时间跨度是否符合大纲设定"
+      - "  2. 人物状态是否符合大纲（如龙魂沉寂/苏醒）"
+      - "  3. 境界进度是否符合大纲（如未突破/已突破）"
+
+  word_count:
+    target: "字数目标: {word_count}字（最低{word_count}字，误差±50字）"
+    remedy_header: "字数不足补救："
+    remedies:
+      - "  - 增加场景感官细节描写（视觉、听觉、触觉、嗅觉）"
+      - "  - 增加人物心理渲染（用动作/生理反应表现情绪）"
+      - "  - 增加环境氛围刻画"
+
+  complete_preview: |
+    以下是 _build_compact_skeleton() 输出的完整格式：
+    (参见完整模板注释)
+
+chapter_prompt:
+  section_labels:
+    outline_context: "【前文大纲上下文（保证宏观连续性）】"
+    draft_context: "【前文正文全文（保持文风、语气、细节连贯）】"
+    skeleton_header: "【当前章节骨架 - 第{chapter_num}章】"
+
+  field_labels:
+    title: "标题: {value}"
+    position: "章节定位: {value}"
+
+  section_headers:
+    cause_chain: "【与前章因果（本章开头必须精确衔接）】"
+    ending: "【结尾卡点（必须严格遵守）】"
+    ending_notice: "注意：结尾卡点是剧情进度控制的关键节点，必须精确匹配上述描述的状态。"
+    ending_warning: "不得超前（写入后续章节内容）或偏离（改变结尾状态）。"
+
+  field_formats:
+    core_event: "核心事件: {value}"
+    emotion: "情绪曲线: {value}"
+    character_actions_bare: "角色行动: {value}"
+    character_actions_item: "  {role}: {action}"
+    foreshadowing_bury: "伏笔埋设: {value}"
+    foreshadowing_recover: "伏笔回收: {value}"
+    foreshadowing_bare: "伏笔处理: {value}"
+    word_count: "字数目标: {word_count}字"
+    scenes_header: "场景概览 ({count}个场景):"
+    scenes_item: "  - {scene}"
+
+  text_blocks:
+    generation_instruction: "请根据以上骨架和上下文，生成完整的章节正文。"
+    scene_note: "场景概览是粗粒度的剧情推进指引，场景间的具体过渡、对话细节、感官描写由你自然发挥。"
+    core_constraints_header: "【核心约束】"
+    core_constraints:
+      - "1. 与前章因果必须精确衔接：章节开头的状态、事件必须与前章结尾保持完全一致，确保故事连贯"
+      - "2. 结尾卡点必须精确匹配：章节结尾的状态、场景、人物位置必须与结尾卡点描述一致"
+      - "3. 文风一致、细节连贯、伏笔贯通、情绪到位"
+
+  complete_preview: |
+    以下是 _build_chapter_prompt() 输出的完整格式：
+    (参见完整模板注释)
+'''
+
+    def _get_skeleton_generation_template(self) -> str:
+        """骨架生成提示词模板（SlidingWindowSkeletonGenerator 使用）"""
+        return '''# ============================================================
+# 骨架生成提示词配置 (SlidingWindowSkeletonGenerator)
+# ============================================================
+#
+# 代码使用说明 (code_usage):
+#   system.*: _build_system_content() 读取
+#   batch_prompt.*: _build_batch_prompt() 读取
+#   retry_prompt.*: _build_retry_prompt() 读取
+#   single_chapter.*: _generate_single_chapter() 读取
+#
+#   修改说明：
+#   - 修改字段值即可改变对应提示词
+#   - {变量} 由代码填充（batch_start, batch_end, batch_count 等）
+
+name: "skeleton_generation"
+version: "1.0"
+
+system:
+  role: "你是一个专业的小说章节规划师，擅长设计章节骨架结构。"
+  task: "你会收到5章区间的核心内容（箭头链接的事件链），需要将其合理分配到每一章中。"
+  section_labels:
+    core_setting: "【核心设定】"
+    story_overview: "【故事概述】"
+    task_header: "【你的任务】"
+
+batch_prompt:
+  task_line: "【任务】生成第{batch_start}-{batch_end}章的详细骨架（共{batch_count}章）"
+  info_line_chapters: '• 本小说总章节数：{total_chapters}章'
+  info_line_position: '• 当前批次位置：第{batch_start}-{batch_end}章'
+
+  section_labels:
+    core_content: "—— 【本章区间核心内容】——"
+    core_content_intro: "以下是第{ranges}章区间的核心内容（箭头链接的事件链）："
+    constraints_label: "  关键约束: {value}"
+    split_rules: "—— 【拆解分配规则】——"
+    prev_skeletons: "—— 【前文骨架（上下文）】——"
+    prev_note: "注意：与前文保持连贯，承接前章伏笔和结尾卡点。"
+    output_format: "—— 【JSON 输出格式】——"
+
+  split_rules:
+    intro: "你需要将上述核心内容**合理分配到第{batch_start}-{batch_end}章**中："
+    rules:
+      - "1. 核心内容中的箭头链接事件（如'A→B→C'）是按时间顺序发生的关键节点"
+      - "2. 将这些事件节点分配到每一章，每章覆盖1个或部分事件节点"
+      - "3. 确保每章有完整的故事弧线，事件展开充分"
+      - "4. 章节之间剧情自然衔接，前章结尾导向后章开场"
+      - "5. 遵守关键约束，不得违反"
+
+  output_json_intro: "请以严格的JSON格式输出（必须使用英文双引号）："
+  output_strict_requirement: "【严格要求】必须为第{batch_start}-{batch_end}章的每一章输出完整骨架，不得省略。"
+  divider_major: "══════════════════════════════════════"
+
+retry_prompt:
+  section_labels:
+    retry_title: "【重试】第{batch_start}-{batch_end}章骨架生成"
+    supplement_title: "【补全】第{batch_start}-{batch_end}章骨架（缺少{missing_count}章）"
+    retry_reason: "之前的响应存在JSON格式错误，请重新生成并注意以下要求："
+    supplement_reason: "之前的响应只生成了{generated_count}/{batch_count}章，请补全缺少的{missing_count}章。"
+    json_requirements: "【JSON格式要求】"
+    json_example_label: "【正确格式示例】"
+    output_instruction: "请输出第{batch_start}-{batch_end}章的完整JSON，确保格式严格正确。"
+
+  json_rules:
+    - '1. 必须使用英文双引号 " 包裹所有键和字符串值，不可用中文引号 ""'
+    - "2. 每个对象/字典的最后一个属性后不能有加逗号"
+    - "3. 对象之间必须用逗号分隔"
+    - '4. 键和值之间用冒号加空格分隔：": "'
+    - '5. 字符串值内部的换行必须用 \\\\n 转义'
+
+  supplement_requirement: "【要求】必须输出全部{batch_count}章的完整JSON，不得省略任何一章。"
+
+single_chapter:
+  system_message: "你是一个专业的小说章节规划师。"
+  prompt_template: "请生成第{ch}章的详细骨架。"
+  prev_context_label: "前文大纲摘要："
+'''
+
+    def _get_review_prompts_template(self) -> str:
+        """评审提示词模板"""
+        return '''# ============================================================
+# 评审提示词配置 (ChapterReview)
+# ============================================================
+#
+# 代码使用说明 (code_usage):
+#   - template: build_review_prompt() 读取
+#   - dimensions: get_review_dimensions() 读取
+#   - pass_criteria: get_pass_threshold() 读取
+
+name: "chapter_review"
+
+pass_criteria:
+  min_total_score: 70
+
+dimensions:
+  - id: "plot_consistency"
+    name: "剧情一致性"
+    weight: 30
+    description: "是否重复前文/人物行为是否一致/情节逻辑是否连贯"
+  - id: "banned_words"
+    name: "禁忌词检测"
+    weight: 20
+  - id: "ai_pattern"
+    name: "AI感检测"
+    weight: 15
+    check_patterns:
+      - "一种莫名的"
+      - "仿佛"
+      - "似乎"
+      - "这一刻"
+      - "不由得"
+      - "不禁"
+  - id: "plot_progression"
+    name: "情节推进"
+    weight: 20
+  - id: "writing_quality"
+    name: "文笔质量"
+    weight: 15
+
+template: |
+  请对以下小说章节进行全面评审。
+
+  【章节信息】
+  章节号：第{chapter_num}章
+  章节大纲：{chapter_outline}
+
+  【核心设定】
+  {core_setting}
+
+  【待评审内容】
+  {content}
+
+  【评审维度】（每项0-100分）
+
+  1. 剧情一致性（30%权重）
+     - 是否重复了前文已经发生的剧情？（最重要！）
+     - 人物行为是否符合设定？
+     - 情节逻辑是否连贯？
+
+  2. 禁忌词检测（20%权重）
+  3. AI感检测（15%权重）
+  4. 情节推进（20%权重）
+  5. 文笔质量（15%权重）
+
+  【输出格式】JSON格式，包含每个维度的score、issues、suggestions，以及total_score和passed
+
+  评分标准：总分≥70分且无严重问题 passed=true
+
+variables:
+  - chapter_num
+  - chapter_outline
+  - core_setting
+  - content
+'''
+
+    def _get_refine_prompts_template(self) -> str:
+        """润色提示词模板"""
+        return '''# ============================================================
+# 润色提示词配置 (ChapterRefine)
+# ============================================================
+#
+# 代码使用说明 (code_usage):
+#   - template: build_refine_prompt() 读取
+#   - first_refine.template: build_first_refine_prompt() 读取
+
+name: "chapter_refine"
+
+template: |
+  请根据评审意见对以下小说章节进行润色修改。
+
+  【章节信息】
+  章节号：第{chapter_num}章
+  章节大纲：{chapter_outline}
+
+  【评审发现的问题】
+  {issues}
+
+  【润色建议】
+  {suggestions}
+
+  【原始内容】
+  {content}
+
+  【润色要求】
+  1. 保持原有剧情走向和人物关系不变
+  2. 针对评审指出的问题进行修改
+  3. 提升语言的生动性和自然度
+  4. 消除AI感表达和禁忌词
+  5. 保持原有的字数规模
+
+  请直接输出润色后的章节内容，不要添加任何解释或标记。
+
+variables:
+  - chapter_num
+  - chapter_outline
+  - issues
+  - suggestions
+  - content
+
+first_refine:
+  template: |
+    请对以下新生成的小说章节进行首次润色，执行硬性规则检查和优化。
+
+    【章节信息】
+    章节号：第{chapter_num}章
+    章节大纲：{chapter_outline}
+
+    【前文上下文】
+    {previous_context}
+
+    【核心设定】
+    {core_setting}
+
+    【待润色内容】
+    {content}
+
+    【硬性规则检查】（必须逐一检查，不可跳过）
+
+    ⚠️ 规则1：剧情连贯性（最高优先级）
+    - 检查是否与前文剧情逻辑一致，无矛盾
+    - 检查人物行为是否符合其性格设定
+    - 检查时间线是否合理，无跳跃或错乱
+    - 检查地点转换是否自然，无突兀跳跃
+
+    ⚠️ 规则2：人物一致性
+    - 人物对话风格是否符合其身份和性格
+    - 人物关系互动是否符合前文设定
+    - 人物称谓是否一致
+
+    ⚠️ 规则3：无重复内容
+    - 确保没有重复前文已发生的剧情
+    - 同一场景描写不要重复
+    - 对话不要重复表达相同意思
+
+    规则4：语言质量
+    - 消除AI感表达
+    - 消除禁忌词
+    - 用具体动作代替情绪标签
+    - 用感官细节代替抽象描述
+
+    规则5：节奏控制
+    - 关键场景是否充分展开
+    - 过渡段落是否简洁
+    - 结尾是否落在具体细节上（禁止总结、升华）
+
+    【润色要求】
+    1. 发现硬性规则问题必须修正
+    2. 保持原有剧情走向和核心事件不变
+    3. 提升语言生动性和画面感
+    4. 保持字数规模（±10%）
+
+    请直接输出润色后的章节内容，不要添加任何解释或标记。
+
+  variables:
+    - chapter_num
+    - chapter_outline
+    - core_setting
+    - previous_context
+    - content
+'''
+
+    def _get_state_card_template(self) -> str:
+        """状态卡提示词模板"""
+        return '''# ============================================================
+# 状态卡生成提示词配置 (StateCard)
+# ============================================================
+#
+# 代码使用说明 (code_usage):
+#   - template: build_state_card_prompt() 读取
+
+name: "state_card"
+
+template: |
+  分析以下小说章节的结尾状态，提取关键信息供下一章使用。
+
+  【章节内容】
+  {content}
+
+  【前文状态】
+  {previous_context}
+
+  请按以下JSON格式输出章节结尾状态：
+  {{
+      "人物状态": ["角色名: 当前状态描述"],
+      "当前位置": ["场景位置"],
+      "情感基调": "本章结尾的情感",
+      "未完成事件": ["待续的剧情线"],
+      "下章建议": "对下一章开头的建议"
+  }}
+
+variables:
+  - content
+  - previous_context
+'''
+
     def load_config(self) -> Dict:
         """加载novel.json"""
         config_path = self.config_dir / "novel.json"
@@ -577,6 +1086,11 @@ template: |
             "style_guide": self.prompts_dir / "style_guide.yaml",
             "generation_prompts": self.prompts_dir / "generation_prompts.yaml",
             "outline_generation": self.prompts_dir / "outline_generation.yaml",
+            "chapter_expansion": self.prompts_dir / "chapter_expansion.yaml",
+            "skeleton_generation": self.prompts_dir / "skeleton_generation.yaml",
+            "review_prompts": self.prompts_dir / "review_prompts.yaml",
+            "refine_prompts": self.prompts_dir / "refine_prompts.yaml",
+            "state_card_prompt": self.prompts_dir / "state_card_prompt.yaml",
             "novel_config": self.config_dir / "novel.json",
             "generation_config": self.config_dir / "generation.json",
             "state_file": self.config_dir / "state.json",

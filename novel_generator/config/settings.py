@@ -454,7 +454,7 @@ def create_default_config() -> Dict[str, Any]:
                 "temperature": 0.7,
                 "top_p": 0.9,
                 "max_tokens": 8000,
-                "system_prompt": "你是一个专业的小说创作助手，擅长根据大纲和设定生成引人入胜的章节内容。",
+                "system_prompt": "",  # 实际内容从 novels/<novel_id>/prompts/system_prompts.yaml 加载
                 "enabled": True,
             },
             "reviewer": {
@@ -463,7 +463,7 @@ def create_default_config() -> Dict[str, Any]:
                 "temperature": 0.3,
                 "top_p": 0.7,
                 "max_tokens": 4000,
-                "system_prompt": "你是一个专业的文学编辑和评审专家，擅长分析小说内容的情节逻辑和连贯性。",
+                "system_prompt": "",  # 实际内容从 novels/<novel_id>/prompts/system_prompts.yaml 加载
                 "enabled": True,
             },
             "refiner": {
@@ -472,7 +472,7 @@ def create_default_config() -> Dict[str, Any]:
                 "temperature": 0.5,
                 "top_p": 0.8,
                 "max_tokens": 8000,
-                "system_prompt": "你是一个专业的文字润色专家，擅长优化句子结构和表达方式。",
+                "system_prompt": "",  # 实际内容从 novels/<novel_id>/prompts/system_prompts.yaml 加载
                 "enabled": True,
             },
         },

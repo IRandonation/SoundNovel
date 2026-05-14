@@ -134,7 +134,7 @@ class ConfigManager:
                         "temperature": 0.7,
                         "top_p": 0.9,
                         "max_tokens": 8000,
-                        "system_prompt": "你是一个专业的网络小说作家，擅长根据大纲创作引人入胜的章节内容。",
+                        "system_prompt": "",  # 实际内容从 novels/<novel_id>/prompts/system_prompts.yaml 加载
                         "enabled": True,
                     }
                 }

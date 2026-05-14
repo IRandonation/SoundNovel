@@ -40,6 +40,9 @@ class PromptManager:
         self._refine_prompts = None
         self._first_refine_prompts = None
         self._state_card_prompt = None
+        self._chapter_expansion_prompts = None
+        self._skeleton_generation_prompts = None
+        self._outline_generation_prompts = None
 
     def _load_yaml(self, filename: str) -> Dict[str, Any]:
         filepath = self.prompt_dir / filename
@@ -91,6 +94,27 @@ class PromptManager:
             self._state_card_prompt = self._load_yaml("state_card_prompt.yaml")
         return self._state_card_prompt
 
+    @property
+    def chapter_expansion_prompts(self) -> Dict[str, Any]:
+        """章节扩写提示词配置（chapter_expander.py 使用）"""
+        if self._chapter_expansion_prompts is None:
+            self._chapter_expansion_prompts = self._load_yaml("chapter_expansion.yaml")
+        return self._chapter_expansion_prompts
+
+    @property
+    def skeleton_generation_prompts(self) -> Dict[str, Any]:
+        """骨架生成提示词配置（SlidingWindowSkeletonGenerator 使用）"""
+        if self._skeleton_generation_prompts is None:
+            self._skeleton_generation_prompts = self._load_yaml("skeleton_generation.yaml")
+        return self._skeleton_generation_prompts
+
+    @property
+    def outline_generation_prompts(self) -> Dict[str, Any]:
+        """大纲生成提示词配置（旧版 OutlineGenerator 使用）"""
+        if self._outline_generation_prompts is None:
+            self._outline_generation_prompts = self._load_yaml("outline_generation.yaml")
+        return self._outline_generation_prompts
+
     def get_system_prompt(self, role: str) -> str:
         prompts = self.system_prompts.get(role, {})
         return prompts.get("template", "")
@@ -129,6 +153,36 @@ class PromptManager:
 
     def get_pass_threshold(self) -> int:
         return self.review_prompts.get("pass_criteria", {}).get("min_total_score", 70)
+
+    # ─── 章节扩写 / 骨架生成 便捷访问方法 ────────────────────
+
+    def get_chapter_expansion_config(self) -> Dict[str, Any]:
+        """获取 ChapterExpander 的完整提示词配置"""
+        return self.chapter_expansion_prompts
+
+    def get_skeleton_generation_config(self) -> Dict[str, Any]:
+        """获取 SlidingWindowSkeletonGenerator 的完整提示词配置"""
+        return self.skeleton_generation_prompts
+
+    def get_compact_skeleton_labels(self) -> Dict[str, Any]:
+        """获取 _build_compact_skeleton() 的格式化标签"""
+        return self.chapter_expansion_prompts.get("compact_skeleton", {})
+
+    def get_batch_prompt_labels(self) -> Dict[str, Any]:
+        """获取 _build_batch_prompt() 的格式化标签"""
+        return self.chapter_expansion_prompts.get("batch_prompt", {})
+
+    def get_chapter_prompt_labels(self) -> Dict[str, Any]:
+        """获取 _build_chapter_prompt() 的格式化标签"""
+        return self.chapter_expansion_prompts.get("chapter_prompt", {})
+
+    def get_chapter_plan_context_labels(self) -> Dict[str, Any]:
+        """获取 _build_chapter_plan_context() 的格式化标签"""
+        return self.chapter_expansion_prompts.get("chapter_plan_context", {})
+
+    def get_system_fallback(self) -> str:
+        """获取 _build_system_content() 的回退角色文本"""
+        return self.chapter_expansion_prompts.get("system", {}).get("fallback_role", "")
 
     def build_generation_prompt(
         self,

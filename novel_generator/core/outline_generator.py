@@ -38,6 +38,7 @@ class SlidingWindowSkeletonGenerator:
         output_dir: Optional[Path] = None,
         conversation_window: int = 100,
         batch_size: int = 5,
+        project_root: str = ".",
     ):
         self.config = config
         self.ai_role_manager = ai_role_manager
@@ -46,11 +47,23 @@ class SlidingWindowSkeletonGenerator:
         self.conversation_window = conversation_window
         self.batch_size = batch_size
         self.output_dir = output_dir or Path(".")
+        self.project_root = project_root
         self.logger = logging.getLogger(__name__)
+
+        # 提示词标签缓存
+        self._sg_labels: Dict[str, Any] = {}
 
         # 对话状态
         self.messages: List[Dict[str, str]] = []
         self.window_start: int = 0
+
+    def _get_sg_labels(self) -> Dict[str, Any]:
+        """延迟加载骨架生成提示词标签（从 skeleton_generation.yaml）"""
+        if not self._sg_labels:
+            from novel_generator.utils.prompt_manager import PromptManager
+            pm = PromptManager(self.project_root)
+            self._sg_labels = pm.skeleton_generation_prompts
+        return self._sg_labels
 
     def generate_skeletons(
         self,
@@ -176,7 +189,11 @@ class SlidingWindowSkeletonGenerator:
                 self.logger.info(f"已加载前文大纲（第{self.window_start}-{start_ch-1}章）作为上下文")
 
     def _build_system_content(self) -> str:
-        """构建system消息内容（含核心设定、故事概述）"""
+        """构建system消息内容（含核心设定、故事概述，标签从 skeleton_generation.yaml 加载）"""
+        sg = self._get_sg_labels()
+        sys_config = sg.get("system", {})
+        sl = sys_config.get("section_labels", {})
+
         parts = []
 
         # 核心设定
@@ -184,17 +201,17 @@ class SlidingWindowSkeletonGenerator:
             core_yaml = yaml.dump(
                 self.core_setting, allow_unicode=True, default_flow_style=False
             )
-            parts.append(f"【核心设定】\n{core_yaml}")
+            parts.append(f"{sl.get('core_setting', '【核心设定】')}\n{core_yaml}")
 
         # 故事概述
         story_overview = self.chapter_plan.get("故事概述", "")
         if story_overview:
-            parts.append(f"\n【故事概述】\n{story_overview}")
+            parts.append(f"\n{sl.get('story_overview', '【故事概述】')}\n{story_overview}")
 
         # 系统指令
-        parts.append("\n【你的任务】")
-        parts.append("你是一个专业的小说章节规划师，擅长设计章节骨架结构。")
-        parts.append("你会收到5章区间的核心内容（箭头链接的事件链），需要将其合理分配到每一章中。")
+        parts.append(f"\n{sl.get('task_header', '【你的任务】')}")
+        parts.append(sys_config.get("role", "你是一个专业的小说章节规划师，擅长设计章节骨架结构。"))
+        parts.append(sys_config.get("task", "你会收到5章区间的核心内容（箭头链接的事件链），需要将其合理分配到每一章中。"))
 
         return "\n\n".join(parts)
 
@@ -266,29 +283,36 @@ class SlidingWindowSkeletonGenerator:
     def _build_batch_prompt(
         self, batch_start: int, batch_end: int, all_skeletons: Dict[str, Any]
     ) -> str:
-        """构建批次生成提示词 - 使用5章区间规划，AI自动拆解分配"""
+        """构建批次生成提示词 - 使用5章区间规划，AI自动拆解分配（标签从 YAML 加载）"""
         batch_count = batch_end - batch_start + 1
-
-        # 总章节数
         total_chapters = self.chapter_plan.get("总章节数", 793)
 
+        sg = self._get_sg_labels()
+        bp = sg.get("batch_prompt", {})
+        sl = bp.get("section_labels", {})
+        split_cfg = bp.get("split_rules", {})
+        divider = bp.get("divider_major", "══════════════════════════════════════")
+
         lines = []
-        lines.append(f"【任务】生成第{batch_start}-{batch_end}章的详细骨架（共{batch_count}章）")
+
+        # 任务行
+        lines.append(bp.get("task_line", "【任务】生成第{batch_start}-{batch_end}章的详细骨架（共{batch_count}章）").format(
+            batch_start=batch_start, batch_end=batch_end, batch_count=batch_count))
         lines.append("")
-        lines.append(f"• 本小说总章节数：{total_chapters}章")
-        lines.append(f"• 当前批次位置：第{batch_start}-{batch_end}章")
+        lines.append(bp.get("info_line_chapters", "• 本小说总章节数：{total_chapters}章").format(total_chapters=total_chapters))
+        lines.append(bp.get("info_line_position", "• 当前批次位置：第{batch_start}-{batch_end}章").format(
+            batch_start=batch_start, batch_end=batch_end))
         lines.append("")
 
         # === 核心内容注入 ===
         involved_plans = self._get_involved_plans(batch_start, batch_end)
         if involved_plans:
-            lines.append("══════════════════════════════════════")
-            lines.append("—— 【本章区间核心内容】——")
-            lines.append("══════════════════════════════════════")
+            lines.append(divider)
+            lines.append(sl.get("core_content", "—— 【本章区间核心内容】——"))
+            lines.append(divider)
             lines.append("")
-            lines.append("以下是第{}章区间的核心内容（箭头链接的事件链）：".format(
-                ", ".join([p["range"] for p in involved_plans])
-            ))
+            lines.append(sl.get("core_content_intro", "以下是第{ranges}章区间的核心内容（箭头链接的事件链）：").format(
+                ranges=", ".join([p["range"] for p in involved_plans])))
             lines.append("")
             for plan in involved_plans:
                 range_key = plan["range"]
@@ -297,19 +321,18 @@ class SlidingWindowSkeletonGenerator:
                 lines.append(f"{range_key}: {core_content}")
                 constraints = data.get("关键约束", [])
                 if constraints:
-                    lines.append(f"  关键约束: {', '.join(constraints)}")
+                    lines.append(sl.get("constraints_label", "  关键约束: {value}").format(
+                        value=', '.join(constraints)))
                 lines.append("")
 
-            lines.append("══════════════════════════════════════")
-            lines.append("—— 【拆解分配规则】——")
-            lines.append("══════════════════════════════════════")
+            lines.append(divider)
+            lines.append(sl.get("split_rules", "—— 【拆解分配规则】——"))
+            lines.append(divider)
             lines.append("")
-            lines.append(f"你需要将上述核心内容**合理分配到第{batch_start}-{batch_end}章**中：")
-            lines.append("1. 核心内容中的箭头链接事件（如'A→B→C'）是按时间顺序发生的关键节点")
-            lines.append("2. 将这些事件节点分配到每一章，每章覆盖1个或部分事件节点")
-            lines.append("3. 确保每章有完整的故事弧线，事件展开充分")
-            lines.append("4. 章节之间剧情自然衔接，前章结尾导向后章开场")
-            lines.append("5. 遵守关键约束，不得违反")
+            lines.append(split_cfg.get("intro", "").format(
+                batch_start=batch_start, batch_end=batch_end))
+            for rule in split_cfg.get("rules", []):
+                lines.append(rule)
             lines.append("")
 
         # === 前文骨架上下文 ===
@@ -317,21 +340,21 @@ class SlidingWindowSkeletonGenerator:
             max(1, batch_start - 50), batch_start - 1, all_skeletons
         )
         if prev_context:
-            lines.append("══════════════════════════════════════")
-            lines.append("—— 【前文骨架（上下文）】——")
-            lines.append("══════════════════════════════════════")
+            lines.append(divider)
+            lines.append(sl.get("prev_skeletons", "—— 【前文骨架（上下文）】——"))
+            lines.append(divider)
             lines.append("")
             lines.append(prev_context)
             lines.append("")
-            lines.append("注意：与前文保持连贯，承接前章伏笔和结尾卡点。")
+            lines.append(sl.get("prev_note", "注意：与前文保持连贯，承接前章伏笔和结尾卡点。"))
             lines.append("")
 
         # === 输出格式 ===
-        lines.append("══════════════════════════════════════")
-        lines.append("—— 【JSON 输出格式】——")
-        lines.append("══════════════════════════════════════")
+        lines.append(divider)
+        lines.append(sl.get("output_format", "—— 【JSON 输出格式】——"))
+        lines.append(divider)
         lines.append("")
-        lines.append("请以严格的JSON格式输出（必须使用英文双引号）：")
+        lines.append(bp.get("output_json_intro", "请以严格的JSON格式输出（必须使用英文双引号）："))
         lines.append("```json")
         lines.append("{")
         lines.append(f'  "第{batch_start}章": {{')
@@ -355,7 +378,8 @@ class SlidingWindowSkeletonGenerator:
         lines.append("}")
         lines.append("```")
         lines.append("")
-        lines.append(f"【严格要求】必须为第{batch_start}-{batch_end}章的每一章输出完整骨架，不得省略。")
+        lines.append(bp.get("output_strict_requirement", "").format(
+            batch_start=batch_start, batch_end=batch_end))
 
         return "\n".join(lines)
 
@@ -471,47 +495,54 @@ class SlidingWindowSkeletonGenerator:
         self, batch_start: int, batch_end: int, failed_response: str,
         missing_count: int = 0
     ) -> str:
-        """构建重试提示词，强调JSON格式要求"""
+        """构建重试提示词，强调JSON格式要求（标签从 YAML 加载）"""
         batch_count = batch_end - batch_start + 1
+
+        sg = self._get_sg_labels()
+        rp = sg.get("retry_prompt", {})
+        rl = rp.get("section_labels", {})
+
         lines = []
 
         if missing_count > 0:
-            lines.append(f"【补全】第{batch_start}-{batch_end}章骨架（缺少{missing_count}章）")
+            lines.append(rl.get("supplement_title", "").format(
+                batch_start=batch_start, batch_end=batch_end, missing_count=missing_count))
             lines.append("")
-            lines.append(f"之前的响应只生成了{batch_count - missing_count}/{batch_count}章，请补全缺少的{missing_count}章。")
+            lines.append(rl.get("supplement_reason", "").format(
+                batch_count=batch_count, missing_count=missing_count,
+                generated_count=batch_count - missing_count))
         else:
-            lines.append(f"【重试】第{batch_start}-{batch_end}章骨架生成")
+            lines.append(rl.get("retry_title", "").format(
+                batch_start=batch_start, batch_end=batch_end))
             lines.append("")
-            lines.append("之前的响应存在JSON格式错误，请重新生成并注意以下要求：")
+            lines.append(rl.get("retry_reason", ""))
 
         lines.append("")
-        lines.append("【JSON格式要求】")
-        lines.append('1. 必须使用英文双引号 " 包裹所有键和字符串值，不可用中文引号 ""')
-        lines.append("2. 每个对象/字典的最后一个属性后不能有加逗号")
-        lines.append("3. 对象之间必须用逗号分隔")
-        lines.append('4. 键和值之间用冒号加空格分隔：": "')
-        lines.append('5. 字符串值内部的换行必须用 \\n 转义')
+        lines.append(rl.get("json_requirements", "【JSON格式要求】"))
+        for rule in rp.get("json_rules", []):
+            lines.append(rule)
         lines.append("")
 
         if missing_count > 0:
-            lines.append(f"【要求】必须输出全部{batch_count}章的完整JSON，不得省略任何一章。")
+            lines.append(rp.get("supplement_requirement", "").format(batch_count=batch_count))
             lines.append("")
 
-        lines.append("【正确格式示例】")
+        lines.append(rl.get("json_example_label", "【正确格式示例】"))
         lines.append("```json")
         lines.append("{")
         lines.append(f'  \"第{batch_start}章\": {{')
         lines.append('    \"标题\": \"章节标题\",')
         lines.append('    \"核心事件\": \"事件描述\"')
-        lines.append("  },")  # 注意逗号
+        lines.append("  },")
         lines.append(f'  \"第{batch_start+1}章\": {{')
         lines.append('    \"标题\": \"章节标题\",')
         lines.append('    \"核心事件\": \"事件描述\"')
-        lines.append("  }")  # 最后一章不加逗号
+        lines.append("  }")
         lines.append("}")
         lines.append("```")
         lines.append("")
-        lines.append(f"请输出第{batch_start}-{batch_end}章的完整JSON，确保格式严格正确。")
+        lines.append(rl.get("output_instruction", "").format(
+            batch_start=batch_start, batch_end=batch_end))
 
         return "\n".join(lines)
 
@@ -537,16 +568,20 @@ class SlidingWindowSkeletonGenerator:
     def _generate_single_chapter(
         self, ch: int, existing_skeletons: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """单章生成（简化版）"""
+        """单章生成（简化版，标签从 YAML 加载）"""
+        sg = self._get_sg_labels()
+        sc = sg.get("single_chapter", {})
+
         # 构建单章提示词
-        prompt = f"请生成第{ch}章的详细骨架。"
+        prompt = sc.get("prompt_template", "请生成第{ch}章的详细骨架。").format(ch=ch)
 
         # 添加前文上下文
         prev_context = self._format_previous_skeletons(
             max(1, ch - 15), ch - 1, existing_skeletons
         )
         if prev_context:
-            prompt += f"\n\n前文大纲摘要：\n{prev_context}"
+            label = sc.get("prev_context_label", "前文大纲摘要：")
+            prompt += f"\n\n{label}\n{prev_context}"
 
         try:
             from novel_generator.core.ai_roles import AIRole
@@ -554,7 +589,7 @@ class SlidingWindowSkeletonGenerator:
             response = self.ai_role_manager.chat_completion(
                 role=AIRole.GENERATOR,
                 messages=[
-                    {"role": "system", "content": "你是一个专业的小说章节规划师。"},
+                    {"role": "system", "content": sc.get("system_message", "你是一个专业的小说章节规划师。")},
                     {"role": "user", "content": prompt},
                 ],
                 max_tokens=2000,
@@ -615,11 +650,13 @@ class OutlineGenerator:
     """大纲生成器（两阶段：幕规划 → 章骨架，骨架直接驱动扩写）"""
 
     def __init__(
-        self, config: Dict[str, Any], multi_model_client: MultiModelClient = None, output_dir: Optional[Path] = None
+        self, config: Dict[str, Any], multi_model_client: MultiModelClient = None,
+        output_dir: Optional[Path] = None, project_root: str = "."
     ):
         self.config = config
         self.settings = Settings(config)
         self.logger = logging.getLogger(__name__)
+        self.project_root = project_root
         if multi_model_client:
             self.multi_model_client = multi_model_client
         else:
@@ -630,12 +667,10 @@ class OutlineGenerator:
         if output_dir:
             self.output_dir = output_dir
         else:
-            # 默认使用当前目录（调用者应传入正确路径）
             self.output_dir = Path(".")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.outline_file = self.output_dir / "outline.json"
-        # skeletons_file 与 outline_file 统一，不再生成两个文件
         self.skeletons_file = self.outline_file
 
     def verify_complete(
@@ -794,6 +829,7 @@ class OutlineGenerator:
             output_dir=self.output_dir,
             conversation_window=conversation_window,
             batch_size=batch_size,
+            project_root=self.project_root,
         )
 
         # 生成骨架
