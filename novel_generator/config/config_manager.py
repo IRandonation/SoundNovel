@@ -99,54 +99,60 @@ class ConfigManager:
         """获取正文文件路径"""
         return self._novel.draft_dir / filename
 
+    def _build_api_config_dict(self, api_config) -> Dict[str, Any]:
+        """将 api.manager.APIConfig 转换为兼容 Settings 的字典"""
+        config = vars(api_config).copy()
+        provider = api_config.provider
+        model = api_config.models.get("expansion_model", "") if api_config.models else ""
+        if not model:
+            model = "deepseek-chat" if provider == "deepseek" else "doubao-seed-2-0-lite-260215"
+
+        if provider == "deepseek":
+            config["deepseek_api_key"] = api_config.api_key
+            config["deepseek_api_base_url"] = api_config.api_base_url
+            config["deepseek_models"] = api_config.models
+        elif provider == "doubao":
+            config["doubao_api_key"] = api_config.api_key
+            config["doubao_api_base_url"] = api_config.api_base_url
+            config["doubao_models"] = api_config.models
+
+        config["ai_roles"] = {
+            "generator": {
+                "provider": provider,
+                "model": model,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_tokens": 8000,
+                "system_prompt": "",
+                "enabled": True,
+            }
+        }
+
+        gen_config = self._novel.load_generation_config()
+        config.setdefault("novel_generation", {})
+        config["novel_generation"]["context_chapters"] = gen_config.get(
+            "context_chapters", 10
+        )
+        config["novel_generation"]["default_word_count"] = gen_config.get(
+            "default_word_count", 1500
+        )
+        return config
+
     def get_api_config(self) -> Dict[str, Any]:
-        """获取API配置"""
+        """获取API配置，找不到引用时自动降级使用默认配置"""
         novel_config = self._novel.load_config()
         api_ref = novel_config.get("api_config_ref", "")
 
         if api_ref:
             api_config = self._api_manager.get_config(api_ref)
             if api_config:
-                # Convert APIConfig dataclass to dict
-                config = vars(api_config).copy()
-                gen_config = self._novel.load_generation_config()
+                return self._build_api_config_dict(api_config)
 
-                # 从API配置获取provider和model，设置ai_roles
-                provider = api_config.provider
-                model = api_config.models.get("expansion_model", "") if api_config.models else ""
-                if not model:
-                    model = "deepseek-chat" if provider == "deepseek" else "doubao-seed-2-0-lite-260215"
-
-                # 兼容 multi_model_client 的字段命名
-                if provider == "deepseek":
-                    config["deepseek_api_key"] = api_config.api_key
-                    config["deepseek_api_base_url"] = api_config.api_base_url
-                    config["deepseek_models"] = api_config.models
-                elif provider == "doubao":
-                    config["doubao_api_key"] = api_config.api_key
-                    config["doubao_api_base_url"] = api_config.api_base_url
-                    config["doubao_models"] = api_config.models
-
-                config["ai_roles"] = {
-                    "generator": {
-                        "provider": provider,
-                        "model": model,
-                        "temperature": 0.7,
-                        "top_p": 0.9,
-                        "max_tokens": 8000,
-                        "system_prompt": "",  # 实际内容从 novels/<novel_id>/prompts/system_prompts.yaml 加载
-                        "enabled": True,
-                    }
-                }
-
-                config.setdefault("novel_generation", {})
-                config["novel_generation"]["context_chapters"] = gen_config.get(
-                    "context_chapters", 10
-                )
-                config["novel_generation"]["default_word_count"] = gen_config.get(
-                    "default_word_count", 1500
-                )
-                return config
+        # 降级：尝试使用默认 API 配置
+        default_config = self._api_manager.get_default()
+        if default_config:
+            logger.info("小说未绑定API配置，自动使用默认配置: %s", default_config.id)
+            return self._build_api_config_dict(default_config)
 
         return {}
 

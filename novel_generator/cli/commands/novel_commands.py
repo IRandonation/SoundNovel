@@ -218,37 +218,38 @@ def novel_create(args: argparse.Namespace) -> int:
     # 描述
     description = input("小说描述（可选）: ").strip()
 
-    # 选择API配置
-    config_mgr = ConfigManager(str(project_root))
-    session = config_mgr.state
+    # 选择API配置（使用新架构 APIManager）
+    from api.manager import APIManager
+    api_manager = APIManager(str(project_root))
+    all_configs = api_manager.list_configs()
+    default_config = api_manager.get_default()
 
     print_info("\n可用API配置:")
-    providers = []
-    if session.api_config.doubao_api_key:
-        print(f"  1. 豆包/火山引擎")
-        providers.append("doubao")
-    if session.api_config.deepseek_api_key:
-        print(f"  2. DeepSeek")
-        providers.append("deepseek")
+    config_choices = []
+    for i, cfg in enumerate(all_configs, 1):
+        is_default = "(默认)" if default_config and cfg["id"] == default_config.id else ""
+        print(f"  {i}. {cfg['name']} ({cfg['provider']}) {is_default}")
+        config_choices.append(cfg["id"])
 
-    if not providers:
+    if not config_choices:
         print_warning("未配置API，请先运行 'soundnovel api create' 配置API")
         if not confirm_action("是否仍要继续创建小说?"):
             return 0
         selected_provider = ""
     else:
+        default_id = default_config.id if default_config else config_choices[0]
         provider_choice = input("\n请选择API配置 (输入序号，直接回车使用默认): ").strip()
         if provider_choice:
             try:
                 idx = int(provider_choice) - 1
-                if 0 <= idx < len(providers):
-                    selected_provider = providers[idx]
+                if 0 <= idx < len(config_choices):
+                    selected_provider = config_choices[idx]
                 else:
-                    selected_provider = session.api_config.provider or providers[0]
+                    selected_provider = default_id
             except ValueError:
-                selected_provider = session.api_config.provider or providers[0]
+                selected_provider = default_id
         else:
-            selected_provider = session.api_config.provider or providers[0] if providers else ""
+            selected_provider = default_id
 
     # 创建目录结构
     try:
