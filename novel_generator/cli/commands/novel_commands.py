@@ -89,23 +89,20 @@ def _get_novel_info(novel_dir: Path) -> Dict[str, Any]:
 
 
 def _get_current_novel_id(project_root: str = ".") -> Optional[str]:
-    """获取当前活跃小说ID"""
-    current_file = Path(project_root) / ".current_novel"
-    if current_file.exists():
-        try:
-            with open(current_file, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        except Exception:
-            pass
-    return None
+    """获取当前活跃小说ID（统一使用 NovelManager）"""
+    from novel_generator.novel_manager import NovelManager
+    novels_dir = Path(project_root) / "novels"
+    nm = NovelManager(str(novels_dir))
+    return nm.get_current_novel_id()
 
 
 def _set_current_novel(novel_id: str, project_root: str = ".") -> bool:
-    """设置当前活跃小说"""
+    """设置当前活跃小说（统一使用 NovelManager）"""
     try:
-        current_file = Path(project_root) / ".current_novel"
-        with open(current_file, "w", encoding="utf-8") as f:
-            f.write(novel_id)
+        from novel_generator.novel_manager import NovelManager
+        novels_dir = Path(project_root) / "novels"
+        nm = NovelManager(str(novels_dir))
+        nm.set_current_novel(novel_id)
         return True
     except Exception as e:
         print_error(f"设置当前小说失败: {e}")
@@ -374,9 +371,10 @@ def novel_delete(args: argparse.Namespace) -> int:
         # 如果删除的是当前活跃小说，清空当前标记
         current_id = _get_current_novel_id(str(project_root))
         if current_id == novel_id:
-            current_file = Path(project_root) / ".current_novel"
-            if current_file.exists():
-                current_file.unlink()
+            from novel_generator.novel_manager import NovelManager
+            novels_dir = Path(project_root) / "novels"
+            nm = NovelManager(str(novels_dir))
+            nm._clear_current_novel()
 
         print_success(f"已删除小说: {info['name']}")
         return 0
