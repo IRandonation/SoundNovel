@@ -112,10 +112,6 @@ class PromptManager:
         """获取 _build_chapter_prompt() 的格式化标签"""
         return self.chapter_expansion_prompts.get("chapter_prompt", {})
 
-    def get_chapter_plan_context_labels(self) -> Dict[str, Any]:
-        """获取 _build_chapter_plan_context() 的格式化标签"""
-        return self.chapter_expansion_prompts.get("chapter_plan_context", {})
-
     def get_system_fallback(self) -> str:
         """获取 _build_system_content() 的回退角色文本"""
         return self.chapter_expansion_prompts.get("system", {}).get("fallback_role", "")

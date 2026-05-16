@@ -8,7 +8,7 @@ import re
 import yaml
 import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List
 
 from novel_generator.config.settings import Settings
 from novel_generator.utils.multi_model_client import MultiModelClient
@@ -23,15 +23,6 @@ class BatchExpansionError(Exception):
 class ChapterExpansionError(Exception):
     """单章生成错误"""
     pass
-
-
-def _parse_chapter_range(section_key: str) -> Tuple[int, int]:
-    """解析章节区间字符串，如 '第6-10章' -> (6, 10)"""
-    import re
-    match = re.match(r"第(\d+)-(\d+)章", section_key)
-    if match:
-        return (int(match.group(1)), int(match.group(2)))
-    return (0, 0)
 
 
 def _summarize_chapter_skeleton(ch_data: Dict[str, Any]) -> str:
@@ -147,7 +138,6 @@ class ChapterExpander:
             pm = PromptManager(self.project_root)
             self._prompt_labels_cache = {
                 "system": pm.chapter_expansion_prompts.get("system", {}),
-                "chapter_plan_context": pm.get_chapter_plan_context_labels(),
                 "batch_prompt": pm.get_batch_prompt_labels(),
                 "compact_skeleton": pm.get_compact_skeleton_labels(),
                 "chapter_prompt": pm.get_chapter_prompt_labels(),
@@ -322,20 +312,7 @@ class ChapterExpander:
 
         messages.append({"role": "system", "content": system_content})
 
-        # ===== L2: 故事概述 + chapter_plan 高层规划 =====
-        story_overview = self._load_story_overview()
-        if story_overview:
-            messages.append({"role": "user", "content": f"【故事概述】\n{story_overview}"})
-            messages.append({"role": "assistant", "content": "已理解故事概述和核心设定。"})
-
-        # 加载 chapter_plan 并构建高层规划上下文（替代30章详细大纲）
-        chapter_plan = self._load_chapter_plan()
-        plan_context = self._build_chapter_plan_context(chapter_plan, start_ch)
-        if plan_context:
-            messages.append({"role": "user", "content": f"【整体故事走向（chapter_plan）】\n{plan_context}"})
-            messages.append({"role": "assistant", "content": "已理解整体故事走向和关键约束。"})
-
-        # ===== L3: 前文正文上下文（保持文风连贯） =====
+        # ===== L2: 前文正文上下文（保持文风连贯） =====
         draft_ctx = _build_draft_context(
             str(self.settings.path_config.draft_dir), start_ch, self.settings.get_draft_window()
         )
@@ -372,20 +349,7 @@ class ChapterExpander:
             system_content += f"\n\n【核心设定】\n{core_setting_yaml}"
         messages.append({"role": "system", "content": system_content})
 
-        # L2: 故事概述 + chapter_plan 高层规划
-        story_overview = self._load_story_overview()
-        if story_overview:
-            messages.append({"role": "user", "content": f"【故事概述】\n{story_overview}"})
-            messages.append({"role": "assistant", "content": "已理解故事概述。"})
-
-        # 加载 chapter_plan 并构建高层规划上下文（替代30章详细大纲）
-        chapter_plan = self._load_chapter_plan()
-        plan_context = self._build_chapter_plan_context(chapter_plan, chapter_num)
-        if plan_context:
-            messages.append({"role": "user", "content": f"【整体故事走向（chapter_plan）】\n{plan_context}"})
-            messages.append({"role": "assistant", "content": "已理解整体故事走向和关键约束。"})
-
-        # L3: 前文正文上下文（保持文风连贯）
+        # L2: 前文正文上下文（保持文风连贯）
         draft_ctx = _build_draft_context(
             str(self.settings.path_config.draft_dir), chapter_num, self.settings.get_draft_window()
         )
@@ -447,119 +411,6 @@ class ChapterExpander:
                         base += "\n\n" + "\n".join(taboo_lines)
 
         return base
-
-    def _load_chapter_plan(self) -> Dict[str, Any]:
-        """加载完整的 chapter_plan.yaml 数据"""
-        try:
-            # 尝试从多种路径加载
-            paths_to_try = [
-                Path(self.project_root) / "source" / "chapter_plan.yaml",
-                Path(self.project_root) / "novels" / self.config.get("novel_id", "") / "source" / "chapter_plan.yaml",
-            ]
-            for path in paths_to_try:
-                if path.exists():
-                    with open(path, "r", encoding="utf-8") as f:
-                        return yaml.safe_load(f) or {}
-        except Exception as e:
-            self.logger.debug(f"加载chapter_plan失败: {e}")
-        return {}
-
-    def _build_chapter_plan_context(
-        self,
-        chapter_plan: Dict[str, Any],
-        current_ch: int,
-    ) -> str:
-        """
-        构建 chapter_plan 高层规划上下文
-
-        只注入当前区间及前后各1个区间（共3区间），
-        提供宏观故事走向和关键约束
-        """
-        if not chapter_plan:
-            return ""
-
-        labels = self._get_prompt_labels()
-        cp_labels = labels.get("chapter_plan_context", {})
-        section_format = cp_labels.get("section_header_format", "【{section_key}】")
-        ft = cp_labels.get("field_templates", {})
-
-        parts = []
-        剧情规划 = chapter_plan.get("剧情规划", {})
-
-        # 找到当前章节所在的区间
-        current_section_key = None
-        current_section_start = 0
-
-        for section_key in 剧情规划.keys():
-            start, end = _parse_chapter_range(section_key)
-            if start <= current_ch <= end:
-                current_section_key = section_key
-                current_section_start = start
-                break
-
-        if not current_section_key:
-            return ""
-
-        # 收集要注入的区间：当前区间、前一区间、后一区间
-        sections_to_inject = []
-        section_keys = list(剧情规划.keys())
-
-        try:
-            current_idx = section_keys.index(current_section_key)
-            if current_idx > 0:
-                sections_to_inject.append(section_keys[current_idx - 1])
-            sections_to_inject.append(current_section_key)
-            if current_idx < len(section_keys) - 1:
-                sections_to_inject.append(section_keys[current_idx + 1])
-        except ValueError:
-            sections_to_inject = [current_section_key]
-
-        # 构建上下文
-        for section_key in sections_to_inject:
-            section_data = 剧情规划.get(section_key, {})
-            if not section_data:
-                continue
-
-            parts.append(f"\n{section_format.format(section_key=section_key)}")
-
-            核心内容 = section_data.get("核心内容", "")
-            if 核心内容:
-                tmpl = ft.get("核心内容", "核心内容: {value}")
-                parts.append(tmpl.format(value=核心内容))
-
-            情绪基调 = section_data.get("情绪基调", "")
-            if 情绪基调:
-                tmpl = ft.get("情绪基调", "情绪基调: {value}")
-                parts.append(tmpl.format(value=情绪基调))
-
-            关键约束 = section_data.get("关键约束", [])
-            if 关键约束:
-                header_tmpl = ft.get("关键约束_header", "关键约束:")
-                parts.append(header_tmpl)
-                item_tmpl = ft.get("关键约束_item", "  - {value}")
-                for constraint in 关键约束:
-                    parts.append(item_tmpl.format(value=constraint))
-
-        return "\n".join(parts) if parts else ""
-
-    def _load_story_overview(self) -> Optional[str]:
-        """从chapter_plan.yaml加载故事概述"""
-        try:
-            # 尝试从source目录加载chapter_plan.yaml
-            chapter_plan_file = Path(self.project_root) / "source" / "chapter_plan.yaml"
-            if chapter_plan_file.exists():
-                with open(chapter_plan_file, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f)
-                    return data.get("故事概述", "")
-            # 也尝试从novels目录结构加载
-            novel_plan_file = Path(self.project_root) / "novels" / self.config.get("novel_id", "") / "source" / "chapter_plan.yaml"
-            if novel_plan_file.exists():
-                with open(novel_plan_file, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f)
-                    return data.get("故事概述", "")
-        except Exception as e:
-            self.logger.debug(f"加载故事概述失败: {e}")
-        return None
 
     def _build_batch_prompt(
         self,

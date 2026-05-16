@@ -40,7 +40,7 @@ def run(args: argparse.Namespace) -> int:
 
     # 获取窗口大小
     gen_config = config_manager.get_generation_config()
-    draft_window = gen_config.get("draft_window", 10)
+    draft_window = gen_config.get("draft_window", 3)
 
     count = config_manager.mark_dirty_cascade(chapter_num, draft_window)
     if count > 0:

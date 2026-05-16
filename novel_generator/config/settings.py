@@ -95,7 +95,7 @@ class GenerationConfig:
     copyright_bypass: bool = True
     world_style: str = ""
     outline_window: int = 30
-    draft_window: int = 10
+    draft_window: int = 3
     batch_size: int = 10  # 批量生成默认批次大小
 
     # 滑动窗口多轮配置（完全替换原有batch模式）

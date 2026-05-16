@@ -59,7 +59,7 @@ class NovelProject:
                 "context_chapters": 10,
                 "default_word_count": 3000,  # 提高默认字数目标
                 "outline_window": 30,
-                "draft_window": 10,
+                "draft_window": 3,
                 # 滑动窗口多轮配置（完全替换原有batch模式）
                 "conversation_window": 100,  # 对话窗口大小（章节数）
                 "skeleton_batch_size": 10,   # 每批生成章节数

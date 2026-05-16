@@ -53,7 +53,7 @@ def run(args: argparse.Namespace) -> int:
     config = config_manager.get_api_config()
     gen_config = config_manager.get_generation_config()
     outline_window = gen_config.get("outline_window", 30)
-    draft_window = gen_config.get("draft_window", 10)
+    draft_window = gen_config.get("draft_window", 3)
 
     # Get outline file from state
     state = config_manager.state

@@ -176,7 +176,7 @@ def run(args: argparse.Namespace) -> int:
 
         gen_config = config_manager.get_generation_config()
         outline_window = args.outline_window or gen_config.get("outline_window", 30)
-        draft_window = args.draft_window or gen_config.get("draft_window", 10)
+        draft_window = args.draft_window or gen_config.get("draft_window", 3)
 
         # 检查是否使用批量模式
         use_batch = len(chapters_to_expand) > 1 and not args.single

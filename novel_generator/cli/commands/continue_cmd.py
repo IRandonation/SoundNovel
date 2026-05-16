@@ -124,7 +124,7 @@ def run(args: argparse.Namespace) -> int:
         return 1
 
     outline_window = gen_config.get("outline_window", 30)
-    draft_window = gen_config.get("draft_window", 10)
+    draft_window = gen_config.get("draft_window", 3)
 
     # Use novel paths
     novel_paths = config_manager.get_novel_paths()

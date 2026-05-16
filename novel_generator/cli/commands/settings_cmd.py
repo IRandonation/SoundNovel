@@ -227,7 +227,7 @@ def run(args):
                     default_config = {
                         "default_word_count": 3200,
                         "outline_window": 30,
-                        "draft_window": 10,
+                        "draft_window": 3,
                         "skeleton_batch_size": 10,
                         # 滑动窗口多轮配置
                         "conversation_window": 100,
@@ -319,7 +319,7 @@ def add_parser(subparsers):
     )
 
     parser.add_argument(
-        "--draft-window", type=int, dest="draft_window", help="设置正文上下文窗口大小（默认10）"
+        "--draft-window", type=int, dest="draft_window", help="设置正文上下文窗口大小（默认3）"
     )
 
     parser.add_argument(
